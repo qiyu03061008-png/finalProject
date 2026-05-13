@@ -14,6 +14,8 @@ class PosePainter extends CustomPainter {
   final Size imageSize;
   final Size canvasSize;
   final bool mirrorX;
+  static const double _minDrawLikelihood = 0.32;
+  static const double _highConfidenceLikelihood = 0.7;
 
   static final List<List<PoseLandmarkType>> _connections = <List<PoseLandmarkType>>[
     <PoseLandmarkType>[PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder],
@@ -58,7 +60,10 @@ class PosePainter extends CustomPainter {
     final p2 = pose[pair[1]];
     if (p1 == null || p2 == null) continue;
 
-    if (p1.likelihood < 0.18 || p2.likelihood < 0.18) continue;
+    if (p1.likelihood < _minDrawLikelihood ||
+        p2.likelihood < _minDrawLikelihood) {
+      continue;
+    }
 
     final start = _toCanvasOffset(Offset(p1.x, p1.y));
     final end = _toCanvasOffset(Offset(p2.x, p2.y));
@@ -79,13 +84,14 @@ class PosePainter extends CustomPainter {
     ..color = const Color(0xFFFBBF24);
 
   for (final point in pose.landmarks.values) {
-    if (point.likelihood < 0.18) continue;
+    if (point.likelihood < _minDrawLikelihood) continue;
 
     final canvasPoint = _toCanvasOffset(Offset(point.x, point.y));
-    final paint = point.likelihood > 0.6 ? highPaint : lowPaint;
+    final paint =
+        point.likelihood > _highConfidenceLikelihood ? highPaint : lowPaint;
 
-    canvas.drawCircle(canvasPoint, 6.2, outerPaint);
-    canvas.drawCircle(canvasPoint, 4.2, paint);
+    canvas.drawCircle(canvasPoint, 5.6, outerPaint);
+    canvas.drawCircle(canvasPoint, 3.8, paint);
   }
 }
 //把模型输出的图像坐标映射到屏幕画布坐标。

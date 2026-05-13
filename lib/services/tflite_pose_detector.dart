@@ -22,8 +22,8 @@ class TFLitePoseDetector {
   Object? _inputBuffer;
   Object? _outputBuffer;
 
-  static const double _minReliableScore = 0.30;
-  static const double _minTorsoScore = 0.35;
+  static const double _minReliableScore = 0.36;
+  static const double _minTorsoScore = 0.40;
 
   static const Map<int, PoseLandmarkType> _movenetIndexMap =
       <int, PoseLandmarkType>{

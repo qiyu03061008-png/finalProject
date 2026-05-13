@@ -577,11 +577,11 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
 
   /// 对 MoveNet 输出做时序平滑，减少关键点抖动和跳点。
   Pose _smoothMoveNetPose(Pose pose) {
-    const lowConfidenceHold = 0.34;
+    const lowConfidenceHold = 0.46;
     const stillAlpha = 0.16;   // 静止时压抖
     const moveAlpha = 0.58;    // 运动时快速跟随
     const fastAlpha = 0.78;    // 大动作时更快跟随
-    const maxJumpRatio = 0.85;
+    const maxJumpRatio = 0.68;
 
     final previous = _lastSmoothedMoveNetPose;
     if (previous == null) {
@@ -590,8 +590,8 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
 
     final torsoScale = _estimateTorsoScale(pose, previous);
-    final stillThreshold = torsoScale * 0.018;
-    final fastThreshold = torsoScale * 0.12;
+    final stillThreshold = torsoScale * 0.016;
+    final fastThreshold = torsoScale * 0.10;
     final maxJump = torsoScale * maxJumpRatio;
 
     final smoothed = <PoseLandmarkType, PoseLandmark>{};
@@ -604,7 +604,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
         if (previousPoint != null &&
             previousPoint.likelihood >= lowConfidenceHold) {
           smoothed[type] = previousPoint.copyWith(
-            likelihood: previousPoint.likelihood * 0.92,
+            likelihood: previousPoint.likelihood * 0.95,
           );
         }
         continue;
@@ -618,37 +618,56 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       final dx = currentPoint.x - previousPoint.x;
       final dy = currentPoint.y - previousPoint.y;
       final jump = math.sqrt(dx * dx + dy * dy);
+      final response = _jointResponseMultiplier(type);
+      final jointStillThreshold = stillThreshold * (0.9 + response * 0.25);
+      final jointFastThreshold = fastThreshold * (0.9 + response * 0.22);
+      final jointMaxJump = maxJump * (0.82 + response * 0.28);
 
       if (currentPoint.likelihood < lowConfidenceHold &&
           previousPoint.likelihood >= lowConfidenceHold) {
         smoothed[type] = previousPoint.copyWith(
           likelihood: math.max(
-            previousPoint.likelihood * 0.90,
+            previousPoint.likelihood * 0.94,
             currentPoint.likelihood,
           ),
         );
         continue;
       }
 
-      if (jump > maxJump &&
+      if (jump > jointMaxJump &&
           previousPoint.likelihood >= currentPoint.likelihood * 0.9) {
         smoothed[type] = previousPoint.copyWith(
-          likelihood: previousPoint.likelihood * 0.88,
+          likelihood: previousPoint.likelihood * 0.93,
         );
         continue;
       }
 
-      final alpha = jump < stillThreshold
-          ? stillAlpha
-          : jump > fastThreshold
+      final normalized = jointFastThreshold <= jointStillThreshold
+          ? 1.0
+          : ((jump - jointStillThreshold) /
+                  (jointFastThreshold - jointStillThreshold))
+              .clamp(0.0, 1.0)
+              .toDouble();
+      final alphaBase = _lerpDouble(stillAlpha, moveAlpha, normalized);
+      var alpha = normalized >= 0.95
           ? fastAlpha
-          : moveAlpha;
+          : _lerpDouble(alphaBase, fastAlpha, normalized * 0.65);
+      final confidenceBoost =
+          ((currentPoint.likelihood - lowConfidenceHold) / (1 - lowConfidenceHold))
+              .clamp(0.0, 1.0)
+              .toDouble();
+      alpha = _lerpDouble(alpha, math.min(0.92, alpha + 0.18), confidenceBoost);
+
+      if (currentPoint.likelihood > previousPoint.likelihood + 0.18) {
+        alpha = math.min(0.94, alpha + 0.10);
+      }
 
       smoothed[type] = PoseLandmark(
         x: previousPoint.x * (1 - alpha) + currentPoint.x * alpha,
         y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
         z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
-        likelihood: currentPoint.likelihood,
+        likelihood:
+            math.max(previousPoint.likelihood * 0.83, currentPoint.likelihood),
       );
     }
 
@@ -658,11 +677,11 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   }
 
   Pose _smoothBlazePose(Pose pose) {
-    const lowConfidenceHold = 0.42;
-    const stillAlpha = 0.22;
-    const moveAlpha = 0.62;
-    const fastAlpha = 0.82;
-    const maxJumpRatio = 0.95;
+    const lowConfidenceHold = 0.50;
+    const stillAlpha = 0.16;
+    const moveAlpha = 0.48;
+    const fastAlpha = 0.72;
+    const maxJumpRatio = 0.72;
 
     final previous = _lastSmoothedBlazePose;
     if (previous == null) {
@@ -699,37 +718,56 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       final dx = currentPoint.x - previousPoint.x;
       final dy = currentPoint.y - previousPoint.y;
       final jump = math.sqrt(dx * dx + dy * dy);
+      final response = _jointResponseMultiplier(type);
+      final jointStillThreshold = stillThreshold * (0.9 + response * 0.25);
+      final jointFastThreshold = fastThreshold * (0.9 + response * 0.22);
+      final jointMaxJump = maxJump * (0.82 + response * 0.28);
 
       if (currentPoint.likelihood < lowConfidenceHold &&
           previousPoint.likelihood >= lowConfidenceHold) {
         smoothed[type] = previousPoint.copyWith(
           likelihood: math.max(
-            previousPoint.likelihood * 0.92,
+            previousPoint.likelihood * 0.95,
             currentPoint.likelihood,
           ),
         );
         continue;
       }
 
-      if (jump > maxJump &&
+      if (jump > jointMaxJump &&
           previousPoint.likelihood >= currentPoint.likelihood * 0.9) {
         smoothed[type] = previousPoint.copyWith(
-          likelihood: previousPoint.likelihood * 0.90,
+          likelihood: previousPoint.likelihood * 0.94,
         );
         continue;
       }
 
-      final alpha = jump < stillThreshold
-          ? stillAlpha
-          : jump > fastThreshold
+      final normalized = jointFastThreshold <= jointStillThreshold
+          ? 1.0
+          : ((jump - jointStillThreshold) /
+                  (jointFastThreshold - jointStillThreshold))
+              .clamp(0.0, 1.0)
+              .toDouble();
+      final alphaBase = _lerpDouble(stillAlpha, moveAlpha, normalized);
+      var alpha = normalized >= 0.95
           ? fastAlpha
-          : moveAlpha;
+          : _lerpDouble(alphaBase, fastAlpha, normalized * 0.65);
+      final confidenceBoost =
+          ((currentPoint.likelihood - lowConfidenceHold) / (1 - lowConfidenceHold))
+              .clamp(0.0, 1.0)
+              .toDouble();
+      alpha = _lerpDouble(alpha, math.min(0.92, alpha + 0.16), confidenceBoost);
+
+      if (currentPoint.likelihood > previousPoint.likelihood + 0.15) {
+        alpha = math.min(0.93, alpha + 0.08);
+      }
 
       smoothed[type] = PoseLandmark(
         x: previousPoint.x * (1 - alpha) + currentPoint.x * alpha,
         y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
         z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
-        likelihood: currentPoint.likelihood,
+        likelihood:
+            math.max(previousPoint.likelihood * 0.85, currentPoint.likelihood),
       );
     }
 
@@ -759,6 +797,36 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     final currentScale = fromPose(current);
     final previousScale = fromPose(previous);
     return math.max(36, math.max(currentScale, previousScale));
+  }
+
+  double _jointResponseMultiplier(PoseLandmarkType type) {
+    switch (type) {
+      case PoseLandmarkType.leftShoulder:
+      case PoseLandmarkType.rightShoulder:
+      case PoseLandmarkType.leftHip:
+      case PoseLandmarkType.rightHip:
+        return 0.72;
+      case PoseLandmarkType.leftElbow:
+      case PoseLandmarkType.rightElbow:
+      case PoseLandmarkType.leftKnee:
+      case PoseLandmarkType.rightKnee:
+        return 0.92;
+      case PoseLandmarkType.leftWrist:
+      case PoseLandmarkType.rightWrist:
+      case PoseLandmarkType.leftAnkle:
+      case PoseLandmarkType.rightAnkle:
+      case PoseLandmarkType.leftHeel:
+      case PoseLandmarkType.rightHeel:
+      case PoseLandmarkType.leftFootIndex:
+      case PoseLandmarkType.rightFootIndex:
+        return 1.18;
+      default:
+        return 1.0;
+    }
+  }
+
+  double _lerpDouble(double a, double b, double t) {
+    return a + (b - a) * t;
   }
 
   /// 判断当前姿态点是否足够可靠，值得继续进入动作分析阶段。

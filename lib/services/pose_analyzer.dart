@@ -10,15 +10,15 @@ class PoseAnalyzer {
   static const int _stateHoldFrames = 2;
   static const int _maxMissingFramesToKeepState = 6;
   // 一次完整动作至少要有一个最短时长，过滤“抖一下就计数”的情况。
-  static const int _minRepPhaseMs = 420;
-  static const int _moveNetStateHoldFrames = 3;
-  static const int _blazePoseStateHoldFrames = 2;
+  static const int _minRepPhaseMs = 300;
+  static const int _moveNetStateHoldFrames = 2;
+  static const int _blazePoseStateHoldFrames = 1;
   static const String _cleanRepPraise = '动作不错。继续保持';
 
   static const int _issueOnFrames = 2;
   static const int _issueOffFrames = 2;
-  static const double _emaFast = 0.32;
-  static const double _emaSlow = 0.24;
+  static const double _emaFast = 0.50;
+  static const double _emaSlow = 0.38;
 
   final PoseMetricCalculator _metricCalculator = const PoseMetricCalculator();
 
@@ -47,12 +47,14 @@ class PoseAnalyzer {
   double? _squatRepMinKneeInward;
   double? _squatRepMaxTorsoLeanDeg;
   double? _squatRepMaxKneeOverToe;
+  double? _squatTopAngleRef;
 
   bool _pushupRepSeenDown = false;
   bool _pushupRepReachedDepth = false;
   bool _pushupRepHasIssue = false;
   double? _pushupRepMinAngle;
   DateTime? _pushupPhaseChangedAt;
+  double? _pushupTopAngleRef;
 
   DateTime? _lastPlankTimestamp;
 
@@ -129,6 +131,10 @@ class PoseAnalyzer {
       t.squatUpAngle - 8,
       t.squatDownAngle + 34,
     );
+    final squatRepStartFrames = math.max(1, holdFrames - 1);
+    final shallowRiseDelta = isMoveNet ? 5.0 : 7.0;
+    final shallowRiseGate =
+        t.squatDownAngle + t.shallowSquatMargin * (isMoveNet ? 0.65 : 0.75);
 
     final depthReachFactor = isMoveNet ? 0.60 : 0.65;
 
@@ -156,8 +162,8 @@ class PoseAnalyzer {
 // kneeInward 数值越小，膝盖越可能内扣。
 // 这里比原配置稍微敏感一点，否则明显内扣也容易漏报。
     final kneeValgusLimit = math.max(
-      t.maxKneeInwardRatio + (isMoveNet ? 0.08 : 0.05),
-      isMoveNet ? 0.88 : 0.90,
+      t.maxKneeInwardRatio + (isMoveNet ? 0.10 : 0.08),
+      isMoveNet ? 0.90 : 0.92,
     );
 
     final torsoLeanLimit = t.maxTorsoLeanDeg + (isMoveNet ? 2 : 3);
@@ -166,17 +172,55 @@ class PoseAnalyzer {
 
     if (kneeAngle != null) {
       _squatMissingFrames = 0;
+      if (!_squatDown &&
+          !_squatRepSeenDown &&
+          kneeAngle >= t.squatDownAngle + (isMoveNet ? 18 : 22)) {
+        _squatTopAngleRef = _squatTopAngleRef == null
+            ? kneeAngle
+            : _squatTopAngleRef! * 0.82 + kneeAngle * 0.18;
+      }
+
+      final dynamicSquatStartAngle = _squatTopAngleRef == null
+          ? squatStartAngle
+          : math.min(
+              t.squatUpAngle - 4,
+              _squatTopAngleRef! - (isMoveNet ? 10 : 14),
+            );
+      final effectiveSquatStartAngle =
+          math.min(squatStartAngle, dynamicSquatStartAngle);
+    final dynamicDepthAngle = _squatTopAngleRef == null
+          ? (t.squatDownAngle + t.shallowSquatMargin * depthReachFactor)
+          : math.max(
+              t.squatDownAngle + t.shallowSquatMargin * depthReachFactor,
+              _squatTopAngleRef! - (isMoveNet ? 42 : 48),
+            );
+      final effectiveSquatUpGate = _squatRepMinAngle == null
+          ? squatUpGate
+          : math.min(
+              squatUpGate,
+              _squatRepMinAngle! + (isMoveNet ? 18 : 22),
+            );
 
       // 膝角足够小，说明正在下蹲。
-      if (kneeAngle < squatStartAngle)  {
+      if (kneeAngle < effectiveSquatStartAngle)  {
         _squatDownStreak += 1;
         _squatUpStreak = 0;
+        if (_squatDownStreak >= squatRepStartFrames && !_squatRepSeenDown) {
+          _squatRepSeenDown = true;
+          _squatRepMinAngle = kneeAngle;
+          _squatPhaseChangedAt ??= pose.timestamp;
+          _squatRepMinKneeInward = kneeInward;
+          _squatRepMaxTorsoLeanDeg = torsoLeanDeg;
+          _squatRepMaxKneeOverToe = kneeOverToe;
+        }
         if (_squatDownStreak >= holdFrames && !_squatDown) {
           // 真正进入下蹲相位时，记录这一轮动作已经“下去过”。
           _squatDown = true;
           _squatRepSeenDown = true;
-          _squatRepMinAngle = kneeAngle;
-          _squatPhaseChangedAt = pose.timestamp;
+          _squatRepMinAngle = _squatRepMinAngle == null
+              ? kneeAngle
+              : math.min(_squatRepMinAngle!, kneeAngle);
+          _squatPhaseChangedAt ??= pose.timestamp;
 
           // 初始化本次动作的3D错误极值
           _squatRepMinKneeInward = kneeInward;
@@ -184,13 +228,14 @@ class PoseAnalyzer {
           _squatRepMaxKneeOverToe = kneeOverToe;
         }
       // 膝角重新变大，说明正在起身。
-      } else if (kneeAngle > squatUpGate) {
+      } else if (kneeAngle > effectiveSquatUpGate) {
         _squatUpStreak += 1;
         _squatDownStreak = 0;
-        if (_squatUpStreak >= holdFrames && _squatDown) {
+        if (_squatUpStreak >= holdFrames && _squatRepSeenDown) {
           final phaseDurationMs = _squatPhaseChangedAt == null
               ? _minRepPhaseMs
               : pose.timestamp.difference(_squatPhaseChangedAt!).inMilliseconds;
+          final repReachedConfirmedBottom = _squatDown;
 
           squatFinishedThisFrame = true;
 
@@ -217,7 +262,8 @@ class PoseAnalyzer {
           final squatMotionEnough = _squatRepMinAngle != null &&
               kneeAngle - _squatRepMinAngle! >= (isMoveNet ? 32 : 26);
 
-          if (_squatRepSeenDown &&
+          if (repReachedConfirmedBottom &&
+              _squatRepSeenDown &&
               _squatRepReachedDepth &&
               squatMotionEnough &&
               phaseDurationMs >= _minRepPhaseMs &&
@@ -231,6 +277,9 @@ class PoseAnalyzer {
           _squatRepReachedDepth = false;
           _squatRepHasIssue = false;
           _squatRepMinAngle = null;
+          _squatRepMinKneeInward = null;
+          _squatRepMaxTorsoLeanDeg = null;
+          _squatRepMaxKneeOverToe = null;
         }
       } else {
         _squatDownStreak = 0;
@@ -238,7 +287,7 @@ class PoseAnalyzer {
       }
 
       // 在整个下蹲过程中，持续更新本次动作的最小膝角。
-      if (_squatDown) {
+      if (_squatRepSeenDown || _squatDown) {
         _squatRepMinAngle = _squatRepMinAngle == null
             ? kneeAngle
             : math.min(_squatRepMinAngle!, kneeAngle);
@@ -263,20 +312,18 @@ class PoseAnalyzer {
       }
 
       // 只要下蹲时达到过目标深度，就把本轮动作标记为“深度达标”。
-      if (_squatDown &&
-          kneeAngle <=
-              (t.squatDownAngle + t.shallowSquatMargin * depthReachFactor)) {
+      if (_squatDown && kneeAngle <= dynamicDepthAngle) {
         _squatRepReachedDepth = true;
       }
 
       final shallow = _stableIssue(
         type: PoseErrorType.shallowSquat,
         active: squatEarlyRiseWithoutDepth ||
-            (_squatDown &&
+            ((_squatRepSeenDown || _squatDown) &&
                 !_squatRepReachedDepth &&
                 _squatRepMinAngle != null &&
-                kneeAngle > _squatRepMinAngle! + 6 &&
-                kneeAngle > t.squatDownAngle + t.shallowSquatMargin * 0.8),
+                kneeAngle > _squatRepMinAngle! + shallowRiseDelta &&
+                kneeAngle > shallowRiseGate),
         onFrames: squatEarlyRiseWithoutDepth ? 1 : (isMoveNet ? 1 : _issueOnFrames),
         build: () => const PoseIssue(
           type: PoseErrorType.shallowSquat,
@@ -475,6 +522,7 @@ class PoseAnalyzer {
       t.pushupUpAngle - 10,
       t.pushupDownAngle + t.pushupDepthMargin + 28,
     );
+    final pushupRepStartFrames = math.max(1, holdFrames - 1);
 
     final elbowAngle = _smoothMetric(
       'pushup_elbow_angle',
@@ -504,33 +552,70 @@ class PoseAnalyzer {
 
     if (elbowAngle != null) {
       _pushupMissingFrames = 0;
+      if (!_pushupDown &&
+          !_pushupRepSeenDown &&
+          elbowAngle >= t.pushupDownAngle + (isMoveNet ? 20 : 24)) {
+        _pushupTopAngleRef = _pushupTopAngleRef == null
+            ? elbowAngle
+            : _pushupTopAngleRef! * 0.82 + elbowAngle * 0.18;
+      }
+
+      final dynamicPushupStartAngle = _pushupTopAngleRef == null
+          ? pushupStartAngle
+          : math.min(
+              t.pushupUpAngle - 4,
+              _pushupTopAngleRef! - (isMoveNet ? 12 : 16),
+            );
+      final effectivePushupStartAngle =
+          math.min(pushupStartAngle, dynamicPushupStartAngle);
+      final dynamicPushupDepthAngle = _pushupTopAngleRef == null
+          ? (t.pushupDownAngle + t.pushupDepthMargin * 0.55)
+          : math.max(
+              t.pushupDownAngle + t.pushupDepthMargin * 0.55,
+              _pushupTopAngleRef! - (isMoveNet ? 48 : 54),
+            );
+      final effectivePushupUpGate = _pushupRepMinAngle == null
+          ? pushupUpGate
+          : math.min(
+              pushupUpGate,
+              _pushupRepMinAngle! + (isMoveNet ? 24 : 28),
+            );
 
       // 手肘弯曲到足够小，说明已经下放到底部附近。
-      if (elbowAngle < pushupStartAngle) {
+      if (elbowAngle < effectivePushupStartAngle) {
         _pushupDownStreak += 1;
         _pushupUpStreak = 0;
+        if (_pushupDownStreak >= pushupRepStartFrames && !_pushupRepSeenDown) {
+          _pushupRepSeenDown = true;
+          _pushupRepMinAngle = elbowAngle;
+          _pushupPhaseChangedAt ??= pose.timestamp;
+        }
         if (_pushupDownStreak >= holdFrames && !_pushupDown) {
           _pushupDown = true;
           _pushupRepSeenDown = true;
-          _pushupRepMinAngle = elbowAngle;
-          _pushupPhaseChangedAt = pose.timestamp;
+          _pushupRepMinAngle = _pushupRepMinAngle == null
+              ? elbowAngle
+              : math.min(_pushupRepMinAngle!, elbowAngle);
+          _pushupPhaseChangedAt ??= pose.timestamp;
         }
-      } else if (elbowAngle > pushupUpGate) {
+      } else if (elbowAngle > effectivePushupUpGate) {
         _pushupUpStreak += 1;
         _pushupDownStreak = 0;
-        if (_pushupUpStreak >= holdFrames && _pushupDown) {
+        if (_pushupUpStreak >= holdFrames && _pushupRepSeenDown) {
           final phaseDurationMs = _pushupPhaseChangedAt == null
               ? _minRepPhaseMs
               : pose.timestamp
                   .difference(_pushupPhaseChangedAt!)
                   .inMilliseconds;
+          final repReachedConfirmedBottom = _pushupDown;
           _pushupDown = false;
           _pushupPhaseChangedAt = pose.timestamp;
           // 俯卧撑计数逻辑与深蹲一致：必须完成一整次“下去再起来”。
           final pushupMotionEnough = _pushupRepMinAngle != null &&
               elbowAngle - _pushupRepMinAngle! >= (isMoveNet ? 42 : 34);
 
-          if (_pushupRepSeenDown &&
+          if (repReachedConfirmedBottom &&
+              _pushupRepSeenDown &&
               _pushupRepReachedDepth &&
               pushupMotionEnough &&
               phaseDurationMs >= _minRepPhaseMs &&
@@ -551,21 +636,20 @@ class PoseAnalyzer {
       }
 
       // 记录这一轮俯卧撑最低时的手肘角度，后面用来判断是否真的推起。
-      if (_pushupDown) {
+      if (_pushupRepSeenDown || _pushupDown) {
         _pushupRepMinAngle = _pushupRepMinAngle == null
             ? elbowAngle
             : math.min(_pushupRepMinAngle!, elbowAngle);
       }
 
       // 达到过目标深度即可，不要求在最低点连续停留。
-      if (_pushupDown &&
-          elbowAngle <= (t.pushupDownAngle + t.pushupDepthMargin * 0.55)) {
+      if (_pushupDown && elbowAngle <= dynamicPushupDepthAngle) {
         _pushupRepReachedDepth = true;
       }
 
       final depthIssue = _stableIssue(
         type: PoseErrorType.pushupDepthNotEnough,
-        active: _pushupDown &&
+        active: (_pushupRepSeenDown || _pushupDown) &&
             !_pushupRepReachedDepth &&
             _pushupRepMinAngle != null &&
             elbowAngle > _pushupRepMinAngle! + 8 &&
@@ -843,6 +927,7 @@ class PoseAnalyzer {
         _squatRepMinKneeInward = null;
         _squatRepMaxTorsoLeanDeg = null;
         _squatRepMaxKneeOverToe = null;
+        _squatTopAngleRef = null;
         break;
       case ExerciseType.pushup:
         _pushupCount = 0;
@@ -855,6 +940,7 @@ class PoseAnalyzer {
         _pushupRepHasIssue = false;
         _pushupRepMinAngle = null;
         _pushupPhaseChangedAt = null;
+        _pushupTopAngleRef = null;
         _squatRepMinKneeInward = null;
         _squatRepMaxTorsoLeanDeg = null;
         _squatRepMaxKneeOverToe = null;
