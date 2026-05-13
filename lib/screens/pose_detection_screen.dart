@@ -573,8 +573,11 @@ final candidates = _useMoveNet
 
   /// 对 MoveNet 输出做时序平滑，减少关键点抖动和跳点。
   Pose _smoothMoveNetPose(Pose pose) {
-    const lowConfidenceHold = 0.28;
-    const maxJumpRatio = 0.80;
+    const lowConfidenceHold = 0.36;
+    const smallMoveAlpha = 0.14;
+    const normalMoveAlpha = 0.26;
+    const maxJumpRatio = 0.55;
+
     final previous = _lastSmoothedMoveNetPose;
     if (previous == null) {
       _lastSmoothedMoveNetPose = pose;
@@ -583,24 +586,31 @@ final candidates = _useMoveNet
 
     final torsoScale = _estimateTorsoScale(pose, previous);
     final maxJump = torsoScale * maxJumpRatio;
+    final stillThreshold = torsoScale * 0.02;
+
     final smoothed = <PoseLandmarkType, PoseLandmark>{};
+
     for (final type in PoseLandmarkType.values) {
       final previousPoint = previous.landmarks[type];
       final currentPoint = pose.landmarks[type];
+
       if (currentPoint == null) {
         if (previousPoint != null &&
             previousPoint.likelihood >= lowConfidenceHold) {
           smoothed[type] = previousPoint.copyWith(
-            likelihood: previousPoint.likelihood * 0.96,
+            likelihood: previousPoint.likelihood * 0.94,
           );
         }
         continue;
       }
+
       if (previousPoint == null) {
         smoothed[type] = currentPoint;
         continue;
       }
-      if (currentPoint.likelihood < lowConfidenceHold) {
+
+      if (currentPoint.likelihood < lowConfidenceHold &&
+          previousPoint.likelihood >= lowConfidenceHold) {
         smoothed[type] = previousPoint.copyWith(
           likelihood: math.max(
             previousPoint.likelihood * 0.93,
@@ -613,21 +623,28 @@ final candidates = _useMoveNet
       final dx = currentPoint.x - previousPoint.x;
       final dy = currentPoint.y - previousPoint.y;
       final jump = math.sqrt(dx * dx + dy * dy);
+
       if (jump > maxJump &&
           previousPoint.likelihood >= currentPoint.likelihood * 0.85) {
         smoothed[type] = previousPoint.copyWith(
           likelihood: math.max(
-            previousPoint.likelihood * 0.94,
+            previousPoint.likelihood * 0.90,
             currentPoint.likelihood,
           ),
         );
         continue;
       }
+
+      final alpha = jump < stillThreshold ? smallMoveAlpha : normalMoveAlpha;
+
       smoothed[type] = PoseLandmark(
-        x: currentPoint.x,
-        y: currentPoint.y,
-        z: currentPoint.z,
-        likelihood: currentPoint.likelihood,
+        x: previousPoint.x * (1 - alpha) + currentPoint.x * alpha,
+        y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
+        z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
+        likelihood: math.max(
+          currentPoint.likelihood,
+          previousPoint.likelihood * 0.90,
+        ),
       );
     }
 

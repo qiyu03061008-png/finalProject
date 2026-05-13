@@ -10,7 +10,9 @@ class PoseAnalyzer {
   static const int _stateHoldFrames = 2;
   static const int _maxMissingFramesToKeepState = 6;
   // 一次完整动作至少要有一个最短时长，过滤“抖一下就计数”的情况。
-  static const int _minRepPhaseMs = 140;
+  static const int _minRepPhaseMs = 420;
+  static const int _moveNetStateHoldFrames = 3;
+  static const int _blazePoseStateHoldFrames = 2;
   static const String _cleanRepPraise = '动作不错。继续保持';
 
   static const int _issueOnFrames = 2;
@@ -95,8 +97,11 @@ class PoseAnalyzer {
 
     final isMoveNet = pose.source.startsWith('movenet');
     // 不同模型稳定性不同，所以进入/离开动作相位的门槛会略有区别。
-    final holdFrames =
-        (pose.source == 'blazepose' || isMoveNet) ? 1 : _stateHoldFrames;
+    final holdFrames = isMoveNet
+        ? _moveNetStateHoldFrames
+        : pose.source == 'blazepose'
+        ? _blazePoseStateHoldFrames
+        : _stateHoldFrames;
     final squatUpGate = isMoveNet
         ? (t.squatUpAngle - 20)
         : pose.source == 'blazepose'
@@ -110,7 +115,7 @@ class PoseAnalyzer {
       t.squatDownAngle + 34,
     );
 
-    final depthReachFactor = isMoveNet ? 1.05 : 0.65;
+    final depthReachFactor = isMoveNet ? 0.60 : 0.65;
 
     final kneeAngle = _smoothMetric(
       'squat_knee_angle',
@@ -158,8 +163,12 @@ class PoseAnalyzer {
           _squatDown = false;
           _squatPhaseChangedAt = pose.timestamp;
           // 只有“下去过 + 深度够 + 速度不过快 + 起身够明显”才算一次完整动作。
+          final squatMotionEnough = _squatRepMinAngle != null &&
+              kneeAngle - _squatRepMinAngle! >= (isMoveNet ? 32 : 26);
+
           if (_squatRepSeenDown &&
               _squatRepReachedDepth &&
+              squatMotionEnough &&
               phaseDurationMs >= _minRepPhaseMs &&
               _hasSquatRecoveredEnough(kneeAngle, t, isMoveNet)) {
             _squatCount += 1;
@@ -327,14 +336,43 @@ class PoseAnalyzer {
     var repJustCountedClean = false;
 
     final isMoveNet = pose.source.startsWith('movenet');
+    if (!_isFloorBodyPose(pose)) {
+      _pushupDown = false;
+      _pushupDownStreak = 0;
+      _pushupUpStreak = 0;
+      _pushupRepSeenDown = false;
+      _pushupRepReachedDepth = false;
+      _pushupRepHasIssue = false;
+      _pushupRepMinAngle = null;
+      _pushupPhaseChangedAt = null;
+
+      return ExerciseAnalysisResult(
+        feedback: '请先摆出俯卧撑准备姿势',
+        score: 0,
+        count: _pushupCount,
+        countDelta: 0,
+        repJustCounted: false,
+        repJustCountedClean: false,
+        issues: const <PoseIssue>[],
+        depthModeLabel: '单目 3D',
+        metrics: const <String, double>{},
+      );
+    }
     // 与深蹲相同，俯卧撑也会按模型来源微调判定门槛。
-    final holdFrames =
-        (pose.source == 'blazepose' || isMoveNet) ? 1 : _stateHoldFrames;
+    final holdFrames = isMoveNet
+        ? _moveNetStateHoldFrames
+        : pose.source == 'blazepose'
+        ? _blazePoseStateHoldFrames
+        : _stateHoldFrames;
     final pushupUpGate = isMoveNet
         ? (t.pushupUpAngle - 14)
         : pose.source == 'blazepose'
             ? (t.pushupUpAngle - 10)
             : (t.pushupUpAngle - 6);
+    final pushupStartAngle = math.min(
+      t.pushupUpAngle - 10,
+      t.pushupDownAngle + t.pushupDepthMargin + 28,
+    );
 
     final elbowAngle = _smoothMetric(
       'pushup_elbow_angle',
@@ -366,7 +404,7 @@ class PoseAnalyzer {
       _pushupMissingFrames = 0;
 
       // 手肘弯曲到足够小，说明已经下放到底部附近。
-      if (elbowAngle < t.pushupDownAngle) {
+      if (elbowAngle < pushupStartAngle) {
         _pushupDownStreak += 1;
         _pushupUpStreak = 0;
         if (_pushupDownStreak >= holdFrames && !_pushupDown) {
@@ -387,8 +425,12 @@ class PoseAnalyzer {
           _pushupDown = false;
           _pushupPhaseChangedAt = pose.timestamp;
           // 俯卧撑计数逻辑与深蹲一致：必须完成一整次“下去再起来”。
+          final pushupMotionEnough = _pushupRepMinAngle != null &&
+              elbowAngle - _pushupRepMinAngle! >= (isMoveNet ? 42 : 34);
+
           if (_pushupRepSeenDown &&
               _pushupRepReachedDepth &&
+              pushupMotionEnough &&
               phaseDurationMs >= _minRepPhaseMs &&
               _hasPushupRecoveredEnough(elbowAngle, t, isMoveNet)) {
             _pushupCount += 1;
@@ -415,14 +457,17 @@ class PoseAnalyzer {
 
       // 达到过目标深度即可，不要求在最低点连续停留。
       if (_pushupDown &&
-          elbowAngle <= (t.pushupDownAngle + t.pushupDepthMargin * 0.65)) {
+          elbowAngle <= (t.pushupDownAngle + t.pushupDepthMargin * 0.55)) {
         _pushupRepReachedDepth = true;
       }
 
       final depthIssue = _stableIssue(
         type: PoseErrorType.pushupDepthNotEnough,
-        active:
-            elbowAngle > t.pushupDownAngle + t.pushupDepthMargin && _pushupDown,
+        active: _pushupDown &&
+            !_pushupRepReachedDepth &&
+            _pushupRepMinAngle != null &&
+            elbowAngle > _pushupRepMinAngle! + 8 &&
+            elbowAngle > t.pushupDownAngle + t.pushupDepthMargin * 0.75,
         build: () => PoseIssue(
           type: PoseErrorType.pushupDepthNotEnough,
           message: '俯卧撑下放深度不够',
@@ -541,12 +586,29 @@ class PoseAnalyzer {
 
   /// 分析平板支撑动作，在检查身体稳定性的同时累计有效时长。
   ExerciseAnalysisResult _analyzePlank(
-    Pose pose,
-    PoseMetricSnapshot snapshot,
-    PersonalizedThresholds t,
-    UserProfile profile,
-  ) {
+      Pose pose,
+      PoseMetricSnapshot snapshot,
+      PersonalizedThresholds t,
+      UserProfile profile,
+      ) {
     final issues = <PoseIssue>[];
+
+    if (!_isFloorBodyPose(pose)) {
+      _lastPlankTimestamp = null;
+      return ExerciseAnalysisResult(
+        feedback: '请先摆出平板支撑姿势',
+        score: 0,
+        count: _plankHoldSeconds.floor(),
+        countDelta: 0,
+        repJustCounted: false,
+        repJustCountedClean: false,
+        issues: const <PoseIssue>[],
+        depthModeLabel: '单目 3D',
+        metrics: <String, double>{
+          'hold_seconds': _plankHoldSeconds,
+        },
+      );
+    }
 
     final bodyLineAngle = _smoothMetric(
       'plank_body_line_angle',
@@ -803,6 +865,63 @@ class PoseAnalyzer {
               t.pushupDownAngle + (isMoveNet ? 14 : 16),
             );
     return nearTop || clearRebound;
+  }
+
+  bool _isFloorBodyPose(Pose pose) {
+    final isMoveNet = pose.source.startsWith('movenet');
+    final threshold = isMoveNet ? 0.34 : 0.45;
+
+    bool reliable(PoseLandmark? p) {
+      return p != null && p.likelihood >= threshold;
+    }
+
+    final leftShoulder = pose[PoseLandmarkType.leftShoulder];
+    final rightShoulder = pose[PoseLandmarkType.rightShoulder];
+    final leftHip = pose[PoseLandmarkType.leftHip];
+    final rightHip = pose[PoseLandmarkType.rightHip];
+    final leftAnkle = pose[PoseLandmarkType.leftAnkle];
+    final rightAnkle = pose[PoseLandmarkType.rightAnkle];
+
+    if (!reliable(leftShoulder) ||
+        !reliable(rightShoulder) ||
+        !reliable(leftHip) ||
+        !reliable(rightHip)) {
+      return false;
+    }
+
+    final shoulderX = (leftShoulder!.x + rightShoulder!.x) / 2;
+    final shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+    final hipX = (leftHip!.x + rightHip!.x) / 2;
+    final hipY = (leftHip.y + rightHip.y) / 2;
+
+    final torsoDx = (shoulderX - hipX).abs();
+    final torsoDy = (shoulderY - hipY).abs();
+    final torsoLen = math.sqrt(torsoDx * torsoDx + torsoDy * torsoDy);
+
+    if (torsoLen < 25) return false;
+
+    final torsoLooksHorizontal = torsoDx > torsoDy * 0.75;
+
+    if (!reliable(leftAnkle) && !reliable(rightAnkle)) {
+      return torsoLooksHorizontal;
+    }
+
+    final anklePoints = <PoseLandmark>[
+      if (reliable(leftAnkle)) leftAnkle!,
+      if (reliable(rightAnkle)) rightAnkle!,
+    ];
+
+    final ankleX =
+        anklePoints.map((p) => p.x).reduce((a, b) => a + b) / anklePoints.length;
+    final ankleY =
+        anklePoints.map((p) => p.y).reduce((a, b) => a + b) / anklePoints.length;
+
+    final bodyDx = (shoulderX - ankleX).abs();
+    final bodyDy = (shoulderY - ankleY).abs();
+
+    final bodyLooksHorizontal = bodyDx > bodyDy * 0.65;
+
+    return torsoLooksHorizontal && bodyLooksHorizontal;
   }
 
   /// 规范化外部传入的视角标签，只保留系统支持的取值。

@@ -22,7 +22,8 @@ class TFLitePoseDetector {
   Object? _inputBuffer;
   Object? _outputBuffer;
 
-  static const double _minReliableScore = 0.20;
+  static const double _minReliableScore = 0.30;
+  static const double _minTorsoScore = 0.35;
 
   static const Map<int, PoseLandmarkType> _movenetIndexMap =
       <int, PoseLandmarkType>{
@@ -674,23 +675,61 @@ math.Point<int> _uprightToSourcePoint(
 
   /// 用躯干关键点做一次基础校验，过滤明显不像人的结果。
   bool _looksLikeHuman(Map<PoseLandmarkType, PoseLandmark> mapped) {
+    bool reliable(PoseLandmarkType type, [double threshold = _minReliableScore]) {
+      final p = mapped[type];
+      return p != null && p.likelihood >= threshold;
+    }
+
+    final torsoReliableCount = <PoseLandmarkType>[
+      PoseLandmarkType.leftShoulder,
+      PoseLandmarkType.rightShoulder,
+      PoseLandmarkType.leftHip,
+      PoseLandmarkType.rightHip,
+    ].where((type) => reliable(type, _minTorsoScore)).length;
+
+    if (torsoReliableCount < 3) return false;
+
+    final lowerBodyReliableCount = <PoseLandmarkType>[
+      PoseLandmarkType.leftHip,
+      PoseLandmarkType.rightHip,
+      PoseLandmarkType.leftKnee,
+      PoseLandmarkType.rightKnee,
+      PoseLandmarkType.leftAnkle,
+      PoseLandmarkType.rightAnkle,
+    ].where(reliable).length;
+
+    if (lowerBodyReliableCount < 4) return false;
+
+    final totalReliableCount = mapped.values
+        .where((p) => p.likelihood >= _minReliableScore)
+        .length;
+
+    if (totalReliableCount < 8) return false;
+
     final leftShoulder = mapped[PoseLandmarkType.leftShoulder];
     final rightShoulder = mapped[PoseLandmarkType.rightShoulder];
     final leftHip = mapped[PoseLandmarkType.leftHip];
     final rightHip = mapped[PoseLandmarkType.rightHip];
+
     if (leftShoulder == null ||
         rightShoulder == null ||
         leftHip == null ||
         rightHip == null) {
       return false;
     }
-    final torsoReliableCount = <double>[
-      leftShoulder.likelihood,
-      rightShoulder.likelihood,
-      leftHip.likelihood,
-      rightHip.likelihood,
-    ].where((s) => s >= _minReliableScore).length;
-    return torsoReliableCount >= 3;
+
+    final shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
+    final hipMidY = (leftHip.y + rightHip.y) / 2;
+    final torsoHeight = (hipMidY - shoulderMidY).abs();
+
+    if (torsoHeight < 24) return false;
+
+    final shoulderWidth = (leftShoulder.x - rightShoulder.x).abs();
+    final hipWidth = (leftHip.x - rightHip.x).abs();
+
+    if (shoulderWidth < 8 && hipWidth < 8) return false;
+
+    return true;
   }
 
   /// 释放解释器和内部缓冲区资源。
