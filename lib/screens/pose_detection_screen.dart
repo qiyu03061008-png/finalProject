@@ -70,10 +70,16 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   double _avgE2ELatencyMs = 0;
   int _e2eSamples = 0;
   int _droppedPrimaryFrames = 0;
-  DateTime _lastMoveNetInferenceAt = DateTime.fromMillisecondsSinceEpoch(0);
-static const int _moveNetTargetIntervalMs = 110; // MoveNet约9FPS推理，更稳
-static const int _moveNetUiIntervalMs = 80;      // UI最多约12FPS刷新
-DateTime _lastMoveNetUiPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastInferenceAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastUiPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+// 推理不要追求每帧都做，先保证相机预览不卡
+  static const int _blazePoseTargetIntervalMs = 95; // 约10FPS
+  static const int _moveNetTargetIntervalMs = 125;  // 约8FPS
+
+// UI骨架刷新也要限频，避免频繁重绘压垮预览
+  static const int _blazePoseUiIntervalMs = 85;
+  static const int _moveNetUiIntervalMs = 110;
   DateTime _sessionStartedAt = DateTime.now();
   bool _tenMinuteReportWritten = false;
   Timer? _stabilityTimer;
@@ -260,26 +266,23 @@ DateTime _lastMoveNetUiPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
   Future<CameraController?> _createPrimaryController(
     CameraDescription camera,
   ) async {
-    final fastImageFormat = defaultTargetPlatform == TargetPlatform.android
-    ? ImageFormatGroup.yuv420
-    : ImageFormatGroup.bgra8888;
+    final moveNetFormat = defaultTargetPlatform == TargetPlatform.android
+        ? ImageFormatGroup.yuv420
+        : ImageFormatGroup.bgra8888;
 
-final candidates = _useMoveNet
-    ? <(ResolutionPreset, ImageFormatGroup?)>[
-        (ResolutionPreset.low, fastImageFormat),
-        (ResolutionPreset.low, null),
-      ]
+    final blazePoseFormat = defaultTargetPlatform == TargetPlatform.android
+        ? ImageFormatGroup.nv21
+        : ImageFormatGroup.bgra8888;
+
+    final candidates = _useMoveNet
+        ? <(ResolutionPreset, ImageFormatGroup?)>[
+      (ResolutionPreset.low, moveNetFormat),
+      (ResolutionPreset.low, null),
+    ]
         : <(ResolutionPreset, ImageFormatGroup?)>[
-            (ResolutionPreset.low, null),
-            (ResolutionPreset.medium, null),
-            (
-              ResolutionPreset.medium,
-              defaultTargetPlatform == TargetPlatform.android
-                  ? ImageFormatGroup.nv21
-                  : ImageFormatGroup.yuv420,
-            ),
-            (ResolutionPreset.medium, ImageFormatGroup.yuv420),
-          ];
+      (ResolutionPreset.low, blazePoseFormat),
+      (ResolutionPreset.low, null),
+    ];
     for (final candidate in candidates) {
       CameraController? controller;
       try {
@@ -334,14 +337,14 @@ final candidates = _useMoveNet
     if (camera == null || sessionId != _cameraSession) {
       return;
     }
-    if (_useMoveNet) {
-      final now = DateTime.now();
-      if (now.difference(_lastMoveNetInferenceAt).inMilliseconds <
-          _moveNetTargetIntervalMs) {
-        return;
-      }
-      _lastMoveNetInferenceAt = now;
+    final now = DateTime.now();
+    final targetIntervalMs =
+    _useMoveNet ? _moveNetTargetIntervalMs : _blazePoseTargetIntervalMs;
+
+    if (now.difference(_lastInferenceAt).inMilliseconds < targetIntervalMs) {
+      return;
     }
+    _lastInferenceAt = now;
 
     _processingPrimary = true;
     final capturedAt = DateTime.now();
@@ -489,40 +492,41 @@ final candidates = _useMoveNet
   }
 
   /// 同步当前姿态和分析结果，并顺手统计实时帧率。
- void _publishLiveState({
-  required Pose? pose,
-  required ExerciseAnalysisResult? analysis,
-}) {
-  final now = DateTime.now();
+  void _publishLiveState({
+    required Pose? pose,
+    required ExerciseAnalysisResult? analysis,
+  }) {
+    final now = DateTime.now();
 
-  // MoveNet模式下不要每次推理结果都强制刷新UI，避免预览和骨架同时抢主线程
-  final shouldThrottleUi = _useMoveNet && pose != null;
-  if (shouldThrottleUi &&
-      now.difference(_lastMoveNetUiPublishAt).inMilliseconds <
-          _moveNetUiIntervalMs) {
+    final uiIntervalMs =
+    _useMoveNet ? _moveNetUiIntervalMs : _blazePoseUiIntervalMs;
+
+    if (pose != null &&
+        now.difference(_lastUiPublishAt).inMilliseconds < uiIntervalMs) {
+      _framesThisSecond += 1;
+
+      if (now.difference(_fpsWindowStart).inMilliseconds >= 1000) {
+        _fps = _framesThisSecond;
+        _framesThisSecond = 0;
+        _fpsWindowStart = now;
+      }
+      return;
+    }
+
+    if (pose != null) {
+      _lastUiPublishAt = now;
+    }
+
+    _poseNotifier.value = pose;
+    _analysisNotifier.value = analysis;
+
     _framesThisSecond += 1;
     if (now.difference(_fpsWindowStart).inMilliseconds >= 1000) {
       _fps = _framesThisSecond;
       _framesThisSecond = 0;
       _fpsWindowStart = now;
     }
-    return;
   }
-
-  if (shouldThrottleUi) {
-    _lastMoveNetUiPublishAt = now;
-  }
-
-  _poseNotifier.value = pose;
-  _analysisNotifier.value = analysis;
-
-  _framesThisSecond += 1;
-  if (now.difference(_fpsWindowStart).inMilliseconds >= 1000) {
-    _fps = _framesThisSecond;
-    _framesThisSecond = 0;
-    _fpsWindowStart = now;
-  }
-}
 
   /// 记录单次推理耗时，并更新平均推理时间。
   void _recordPerformance(double inferenceMs) {
@@ -573,10 +577,11 @@ final candidates = _useMoveNet
 
   /// 对 MoveNet 输出做时序平滑，减少关键点抖动和跳点。
   Pose _smoothMoveNetPose(Pose pose) {
-    const lowConfidenceHold = 0.36;
-    const smallMoveAlpha = 0.14;
-    const normalMoveAlpha = 0.26;
-    const maxJumpRatio = 0.55;
+    const lowConfidenceHold = 0.34;
+    const stillAlpha = 0.16;   // 静止时压抖
+    const moveAlpha = 0.58;    // 运动时快速跟随
+    const fastAlpha = 0.78;    // 大动作时更快跟随
+    const maxJumpRatio = 0.85;
 
     final previous = _lastSmoothedMoveNetPose;
     if (previous == null) {
@@ -585,8 +590,90 @@ final candidates = _useMoveNet
     }
 
     final torsoScale = _estimateTorsoScale(pose, previous);
+    final stillThreshold = torsoScale * 0.018;
+    final fastThreshold = torsoScale * 0.12;
     final maxJump = torsoScale * maxJumpRatio;
-    final stillThreshold = torsoScale * 0.02;
+
+    final smoothed = <PoseLandmarkType, PoseLandmark>{};
+
+    for (final type in PoseLandmarkType.values) {
+      final previousPoint = previous.landmarks[type];
+      final currentPoint = pose.landmarks[type];
+
+      if (currentPoint == null) {
+        if (previousPoint != null &&
+            previousPoint.likelihood >= lowConfidenceHold) {
+          smoothed[type] = previousPoint.copyWith(
+            likelihood: previousPoint.likelihood * 0.92,
+          );
+        }
+        continue;
+      }
+
+      if (previousPoint == null) {
+        smoothed[type] = currentPoint;
+        continue;
+      }
+
+      final dx = currentPoint.x - previousPoint.x;
+      final dy = currentPoint.y - previousPoint.y;
+      final jump = math.sqrt(dx * dx + dy * dy);
+
+      if (currentPoint.likelihood < lowConfidenceHold &&
+          previousPoint.likelihood >= lowConfidenceHold) {
+        smoothed[type] = previousPoint.copyWith(
+          likelihood: math.max(
+            previousPoint.likelihood * 0.90,
+            currentPoint.likelihood,
+          ),
+        );
+        continue;
+      }
+
+      if (jump > maxJump &&
+          previousPoint.likelihood >= currentPoint.likelihood * 0.9) {
+        smoothed[type] = previousPoint.copyWith(
+          likelihood: previousPoint.likelihood * 0.88,
+        );
+        continue;
+      }
+
+      final alpha = jump < stillThreshold
+          ? stillAlpha
+          : jump > fastThreshold
+          ? fastAlpha
+          : moveAlpha;
+
+      smoothed[type] = PoseLandmark(
+        x: previousPoint.x * (1 - alpha) + currentPoint.x * alpha,
+        y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
+        z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
+        likelihood: currentPoint.likelihood,
+      );
+    }
+
+    final nextPose = pose.copyWith(landmarks: smoothed);
+    _lastSmoothedMoveNetPose = nextPose;
+    return nextPose;
+  }
+
+  Pose _smoothBlazePose(Pose pose) {
+    const lowConfidenceHold = 0.42;
+    const stillAlpha = 0.22;
+    const moveAlpha = 0.62;
+    const fastAlpha = 0.82;
+    const maxJumpRatio = 0.95;
+
+    final previous = _lastSmoothedBlazePose;
+    if (previous == null) {
+      _lastSmoothedBlazePose = pose;
+      return pose;
+    }
+
+    final torsoScale = _estimateTorsoScale(pose, previous);
+    final stillThreshold = torsoScale * 0.018;
+    final fastThreshold = torsoScale * 0.12;
+    final maxJump = torsoScale * maxJumpRatio;
 
     final smoothed = <PoseLandmarkType, PoseLandmark>{};
 
@@ -609,124 +696,40 @@ final candidates = _useMoveNet
         continue;
       }
 
-      if (currentPoint.likelihood < lowConfidenceHold &&
-          previousPoint.likelihood >= lowConfidenceHold) {
-        smoothed[type] = previousPoint.copyWith(
-          likelihood: math.max(
-            previousPoint.likelihood * 0.93,
-            currentPoint.likelihood,
-          ),
-        );
-        continue;
-      }
-
       final dx = currentPoint.x - previousPoint.x;
       final dy = currentPoint.y - previousPoint.y;
       final jump = math.sqrt(dx * dx + dy * dy);
-
-      if (jump > maxJump &&
-          previousPoint.likelihood >= currentPoint.likelihood * 0.85) {
-        smoothed[type] = previousPoint.copyWith(
-          likelihood: math.max(
-            previousPoint.likelihood * 0.90,
-            currentPoint.likelihood,
-          ),
-        );
-        continue;
-      }
-
-      final alpha = jump < stillThreshold ? smallMoveAlpha : normalMoveAlpha;
-
-      smoothed[type] = PoseLandmark(
-        x: previousPoint.x * (1 - alpha) + currentPoint.x * alpha,
-        y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
-        z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
-        likelihood: math.max(
-          currentPoint.likelihood,
-          previousPoint.likelihood * 0.90,
-        ),
-      );
-    }
-
-    final nextPose = pose.copyWith(landmarks: smoothed);
-    _lastSmoothedMoveNetPose = nextPose;
-    return nextPose;
-  }
-
-  Pose _smoothBlazePose(Pose pose) {
-    const lowConfidenceHold = 0.42;
-    const smallMoveAlpha = 0.20;
-    const normalMoveAlpha = 0.34;
-    const maxJumpRatio = 0.65;
-
-    final previous = _lastSmoothedBlazePose;
-    if (previous == null) {
-      _lastSmoothedBlazePose = pose;
-      return pose;
-    }
-
-    final torsoScale = _estimateTorsoScale(pose, previous);
-    final maxJump = torsoScale * maxJumpRatio;
-    final stillThreshold = torsoScale * 0.025;
-
-    final smoothed = <PoseLandmarkType, PoseLandmark>{};
-
-    for (final type in PoseLandmarkType.values) {
-      final previousPoint = previous.landmarks[type];
-      final currentPoint = pose.landmarks[type];
-
-      if (currentPoint == null) {
-        if (previousPoint != null &&
-            previousPoint.likelihood >= lowConfidenceHold) {
-          smoothed[type] = previousPoint.copyWith(
-            likelihood: previousPoint.likelihood * 0.96,
-          );
-        }
-        continue;
-      }
-
-      if (previousPoint == null) {
-        smoothed[type] = currentPoint;
-        continue;
-      }
 
       if (currentPoint.likelihood < lowConfidenceHold &&
           previousPoint.likelihood >= lowConfidenceHold) {
         smoothed[type] = previousPoint.copyWith(
           likelihood: math.max(
-            previousPoint.likelihood * 0.95,
+            previousPoint.likelihood * 0.92,
             currentPoint.likelihood,
           ),
         );
         continue;
       }
-
-      final dx = currentPoint.x - previousPoint.x;
-      final dy = currentPoint.y - previousPoint.y;
-      final dz = currentPoint.z - previousPoint.z;
-      final jump = math.sqrt(dx * dx + dy * dy);
 
       if (jump > maxJump &&
-          previousPoint.likelihood >= currentPoint.likelihood * 0.85) {
+          previousPoint.likelihood >= currentPoint.likelihood * 0.9) {
         smoothed[type] = previousPoint.copyWith(
-          likelihood: math.max(
-            previousPoint.likelihood * 0.93,
-            currentPoint.likelihood,
-          ),
+          likelihood: previousPoint.likelihood * 0.90,
         );
         continue;
       }
 
-      final alpha = jump < stillThreshold ? smallMoveAlpha : normalMoveAlpha;
+      final alpha = jump < stillThreshold
+          ? stillAlpha
+          : jump > fastThreshold
+          ? fastAlpha
+          : moveAlpha;
 
       smoothed[type] = PoseLandmark(
         x: previousPoint.x * (1 - alpha) + currentPoint.x * alpha,
         y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
         z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
-        likelihood: math.max(
-          currentPoint.likelihood,
-          previousPoint.likelihood * 0.92,
-        ),
+        likelihood: currentPoint.likelihood,
       );
     }
 
@@ -915,8 +918,8 @@ final candidates = _useMoveNet
                       _actionRecognitionArmed = false;
                       _uprightStableFrames = 0;
                     });
-                    _lastMoveNetInferenceAt =
-                        DateTime.fromMillisecondsSinceEpoch(0);
+                    _lastInferenceAt = DateTime.fromMillisecondsSinceEpoch(0);
+                    _lastUiPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
                     _publishLiveState(pose: null, analysis: null);
                     _cameraSession += 1;
                     await _primaryController?.dispose();
