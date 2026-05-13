@@ -8,6 +8,7 @@ class PoseMetricSnapshot {
     required this.inferredViewTag,
   });
 
+  // 已计算好的指标集合，供分析器按 key 直接读取。
   final Map<String, double> metrics;
   final String inferredViewTag;
 
@@ -20,7 +21,9 @@ class PoseMetricCalculator {
   static const double minLikelihood = 0.45;
   static const double minLikelihoodForRep = 0.30;
 
+  /// 从单帧姿态中提取后续动作分析所依赖的各项指标。
   PoseMetricSnapshot calculate(Pose pose) {
+    // 先建立身体局部坐标系，后面很多 3D 指标都依赖它。
     final frame = _buildBodyFrame(pose);
     final kneeAngle = _avg(
       _jointAngleForRep(
@@ -50,6 +53,7 @@ class PoseMetricCalculator {
 
     final metrics = <String, double>{};
     void addMetric(String key, double? value) {
+      // 统一过滤掉无效数值，避免下游再做重复判空。
       if (value != null && value.isFinite && !value.isNaN) {
         metrics[key] = value;
       }
@@ -107,6 +111,7 @@ class PoseMetricCalculator {
     );
   }
 
+  /// 估计当前姿态更接近正面、侧面还是斜侧面视角。
   String inferViewTag(Pose pose) {
     final leftShoulder = pose[PoseLandmarkType.leftShoulder];
     final rightShoulder = pose[PoseLandmarkType.rightShoulder];
@@ -133,6 +138,7 @@ class PoseMetricCalculator {
       return 'front';
     }
 
+    // 躯干越“窄”，越像侧面；越“宽”，越像正面。
     final widthRatio = ((shoulderWidth + hipWidth) / 2.0) / torsoLength;
     if (widthRatio <= 0.32) {
       return 'side';
@@ -143,6 +149,7 @@ class PoseMetricCalculator {
     return 'front';
   }
 
+  /// 计算关节夹角，优先使用 3D 点位，必要时退回到 2D 计算。
   double? _jointAngleForRep(
     PoseLandmark? p1,
     PoseLandmark? p2,
@@ -155,13 +162,16 @@ class PoseMetricCalculator {
     final b = p2!;
     final c = p3!;
 
+    // 以中间点 p2 为关节顶点，分别连向两侧点计算夹角。
     final v1 = _vector3(b, a);
     final v2 = _vector3(b, c);
+    // 优先使用 3D 角度；深度可用时，它比纯 2D 更稳。
     final angle3d = _vectorAngle3(v1, v2);
     if (!angle3d.isNaN && angle3d.isFinite) {
       return angle3d;
     }
 
+    // 如果 3D 不稳定，则退回到图像平面的 2D 夹角。
     final v1x = a.x - b.x;
     final v1y = a.y - b.y;
     final v2x = c.x - b.x;
@@ -175,6 +185,7 @@ class PoseMetricCalculator {
     return acos(cosValue.clamp(-1.0, 1.0)) * 180 / pi;
   }
 
+  /// 构建以人体为中心的局部坐标系，供 3D 姿态指标使用。
   _BodyFrame? _buildBodyFrame(Pose pose) {
     final leftHip = pose[PoseLandmarkType.leftHip];
     final rightHip = pose[PoseLandmarkType.rightHip];
@@ -193,6 +204,7 @@ class PoseMetricCalculator {
       return null;
     }
 
+    // lateral: 身体左右方向；up: 身体向上方向；forward: 身体朝前方向。
     var lateral = _vector3(leftHip!, rightHip!);
     if (lateral.magnitude < 1e-5) {
       lateral = _vector3(leftShoulder!, rightShoulder!);
@@ -205,6 +217,7 @@ class PoseMetricCalculator {
     lateral = lateral.normalized;
     up = up.normalized;
 
+    // 通过叉乘补出第三个正交方向，形成身体自己的坐标系。
     var forward = lateral.cross(up);
     if (forward.magnitude < 1e-5) {
       return null;
@@ -220,6 +233,7 @@ class PoseMetricCalculator {
     );
   }
 
+  /// 计算躯干相对下肢支撑线的前倾角度。
   double? _torsoForwardLeanDeg(Pose pose, _BodyFrame? frame) {
     if (frame == null) {
       return null;
@@ -279,6 +293,7 @@ class PoseMetricCalculator {
       return null;
     }
 
+    // 膝盖横向位置与脚踝横向位置越接近，通常说明膝盖没有明显内扣。
     final leftRatio = leftKneeLat.abs() / leftAnkleLat.abs();
     final rightRatio = rightKneeLat.abs() / rightAnkleLat.abs();
     return (leftRatio + rightRatio) / 2.0;
@@ -300,6 +315,7 @@ class PoseMetricCalculator {
       return null;
     }
 
+    // 只关心“膝盖超过脚尖多少”，没有超过时按 0 处理。
     final leftForward =
         ((_forwardCoord(leftKnee!, frame) - _forwardCoord(leftFoot!, frame))
                 .clamp(0.0, double.infinity) as num)
@@ -317,9 +333,11 @@ class PoseMetricCalculator {
       return null;
     }
 
+    // 用小腿长度归一化，减少不同身材带来的绝对距离差异。
     return ((leftForward / leftShank) + (rightForward / rightShank)) / 2.0;
   }
 
+  /// 计算髋部偏离肩到踝参考线的程度。
   double? _bodyLineHipOffset(Pose pose, _BodyFrame frame) {
     final shoulderCenter = _midpoint(
       pose[PoseLandmarkType.leftShoulder],
@@ -348,6 +366,7 @@ class PoseMetricCalculator {
       return null;
     }
 
+    // 把髋部投影到“肩到踝”的参考线上，再看它偏离了多少。
     final t =
         df.abs() < 1e-5 ? 0.5 : ((h.forward - s.forward) / df).clamp(0.0, 1.0);
     final expectedUp = s.up + (a.up - s.up) * t;
@@ -376,6 +395,7 @@ class PoseMetricCalculator {
       return null;
     }
 
+    // 在额状面里比较“躯干方向”和“上臂方向”的夹角，用来判断手肘外展。
     final torso =
         _projectToFrontal(_vector3(hipCenter!, shoulderCenter!), frame);
     final leftUpper =
@@ -405,6 +425,7 @@ class PoseMetricCalculator {
       return null;
     }
 
+    // 比较“肩到耳”和“肩到髋”的夹角，近似描述颈部是否中立。
     final neck =
         _projectToSagittal(_vector3(shoulderCenter!, earCenter!), frame);
     final torso =
@@ -412,6 +433,7 @@ class PoseMetricCalculator {
     return _vectorAngle3(neck, torso);
   }
 
+  /// 优先使用 3D 颈部角度，失败时退回到更稳定的 2D 角度。
   double? _neckNeutralAngleStable(Pose pose, _BodyFrame frame) {
     final angle3d = _neckNeutralAngle3D(pose, frame);
     if (angle3d != null && angle3d.isFinite && !angle3d.isNaN) {
@@ -460,6 +482,7 @@ class PoseMetricCalculator {
     if (angleDeg == null) {
       return null;
     }
+    // 180 度表示近似一条直线，偏差越大说明越弯。
     return (180 - angleDeg).abs();
   }
 
@@ -467,6 +490,7 @@ class PoseMetricCalculator {
     if (!_isReliable(a) || !_isReliable(b)) {
       return null;
     }
+    // 中点的置信度取两者较小值，避免过度乐观。
     final pa = a!;
     final pb = b!;
     return PoseLandmark(
@@ -484,6 +508,7 @@ class PoseMetricCalculator {
   }
 
   double? _avg(double? a, double? b) {
+    // 左右身体两侧能算几个就算几个，都有时再取平均。
     if (a == null && b == null) {
       return null;
     }

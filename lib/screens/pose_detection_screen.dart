@@ -28,6 +28,7 @@ class PoseDetectionScreen extends StatefulWidget {
 
   final ExerciseType exerciseType;
 
+  /// 创建姿态检测页面对应的可变状态对象。
   @override
   State<PoseDetectionScreen> createState() => _PoseDetectionScreenState();
 }
@@ -70,7 +71,9 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   int _e2eSamples = 0;
   int _droppedPrimaryFrames = 0;
   DateTime _lastMoveNetInferenceAt = DateTime.fromMillisecondsSinceEpoch(0);
-  static const int _moveNetTargetIntervalMs = 60;
+static const int _moveNetTargetIntervalMs = 110; // MoveNet约9FPS推理，更稳
+static const int _moveNetUiIntervalMs = 80;      // UI最多约12FPS刷新
+DateTime _lastMoveNetUiPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _sessionStartedAt = DateTime.now();
   bool _tenMinuteReportWritten = false;
   Timer? _stabilityTimer;
@@ -85,15 +88,17 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   static const int _uprightRequiredStableFrames = 3;
   Pose? _lastStablePose;
   DateTime? _lastPoseSeenAt;
-  static const int _keepPoseAliveMs = 100;
+  static const int _keepPoseAliveMs = 220;
   Pose? _lastSmoothedMoveNetPose;
-
+  Pose? _lastSmoothedBlazePose;
+  /// 初始化页面状态，并启动相机和模型的整体初始化流程。
   @override
   void initState() {
     super.initState();
     _boot(); //启动设备和模型
   }
 
+  /// 启动页面所需的资源初始化，包括配置、相机和后台模型。
   Future<void> _boot() async {
     try {
       _sessionStartedAt = DateTime.now();
@@ -114,6 +119,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
   }
 
+  /// 启动稳定性统计定时器，按分钟检查是否需要落盘报告。
   void _startStabilityTimer() {
     _stabilityTimer?.cancel();
     _stabilityTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -125,7 +131,9 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     });
   }
 
+  /// 在后台异步初始化 MoveNet，避免阻塞主相机流程。
   Future<void> _initMoveNetInBackground() async {
+
     try {
       await _moveNetDetector.initialize().timeout(const Duration(seconds: 3));
       _moveNetReady = _moveNetDetector.isReady;
@@ -136,6 +144,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
   }
 
+  /// 初始化相机权限、相机列表和主相机控制器。
   Future<void> _initCameras() async {
     final sessionId = ++_cameraSession;
     setState(() {
@@ -224,7 +233,8 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       });
     }
   }
-
+    //打开相机图像流
+  /// 启动主相机图像流，并把每一帧交给识别逻辑处理。
   Future<void> _startPrimaryStream(
     CameraController controller,
     int sessionId,
@@ -246,20 +256,19 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
   }
 
+  /// 按候选配置依次尝试创建可用的主相机控制器。
   Future<CameraController?> _createPrimaryController(
     CameraDescription camera,
   ) async {
-    final candidates = _useMoveNet
-        ? <(ResolutionPreset, ImageFormatGroup?)>[
-            (ResolutionPreset.low, null),
-            (
-              ResolutionPreset.low,
-              defaultTargetPlatform == TargetPlatform.android
-                  ? ImageFormatGroup.nv21
-                  : ImageFormatGroup.yuv420,
-            ),
-            (ResolutionPreset.medium, null),
-          ]
+    final fastImageFormat = defaultTargetPlatform == TargetPlatform.android
+    ? ImageFormatGroup.yuv420
+    : ImageFormatGroup.bgra8888;
+
+final candidates = _useMoveNet
+    ? <(ResolutionPreset, ImageFormatGroup?)>[
+        (ResolutionPreset.low, fastImageFormat),
+        (ResolutionPreset.low, null),
+      ]
         : <(ResolutionPreset, ImageFormatGroup?)>[
             (ResolutionPreset.low, null),
             (ResolutionPreset.medium, null),
@@ -289,6 +298,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     return null;
   }
 
+  /// 检查并申请相机权限，同时更新页面上的权限状态提示。
   Future<bool> _ensureCameraPermission() async {
     var status = await Permission.camera.status;
     if (!status.isGranted) {
@@ -313,6 +323,8 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     return false;
   }
 
+  /// 处理主相机的一帧图像，完成检测、补深度、分析和界面更新。
+  /// 核心
   Future<void> _onPrimaryFrame(CameraImage image, int sessionId) async {
     final camera = _primaryCamera;
     if (_processingPrimary) {
@@ -357,21 +369,23 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
           _actionRecognitionArmed = false;
           _uprightStableFrames = 0;
           _lastSmoothedMoveNetPose = null;
+          _lastSmoothedBlazePose = null;
           _publishLiveState(pose: null, analysis: null);
         }
         return;
       }
       _noPoseFrameCount = 0;
 
-      final filteredPose2d = _useMoveNet ? _smoothMoveNetPose(pose2d) : pose2d;
+      final filteredPose2d = _useMoveNet
+          ? _smoothMoveNetPose(pose2d)
+          : _smoothBlazePose(pose2d);
+
       final displayPose = _depthEstimator.estimateMonocular3D(
-        pose2d: pose2d,
+        pose2d: filteredPose2d,
         profile: _profile, // 用用户的身高体重来校准
       );
-      final fused = _depthEstimator.estimateMonocular3D(
-        pose2d: filteredPose2d,
-        profile: _profile,
-      );
+
+      final fused = displayPose;
 
 // 先确认用户站好了，才开始分析动作
       if (!_actionRecognitionArmed) {
@@ -416,6 +430,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
   }
 
+  /// 判断用户是否已经以较稳定的直立姿态进入取景区域。
   bool _isUprightReadyPose(Pose pose) {
     PoseLandmark? point(PoseLandmarkType type) => pose[type];
     bool reliable(PoseLandmarkType type) =>
@@ -473,31 +488,55 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     return true;
   }
 
-  void _publishLiveState({
-    required Pose? pose,
-    required ExerciseAnalysisResult? analysis,
-  }) {
-    _poseNotifier.value = pose;
-    _analysisNotifier.value = analysis;
+  /// 同步当前姿态和分析结果，并顺手统计实时帧率。
+ void _publishLiveState({
+  required Pose? pose,
+  required ExerciseAnalysisResult? analysis,
+}) {
+  final now = DateTime.now();
+
+  // MoveNet模式下不要每次推理结果都强制刷新UI，避免预览和骨架同时抢主线程
+  final shouldThrottleUi = _useMoveNet && pose != null;
+  if (shouldThrottleUi &&
+      now.difference(_lastMoveNetUiPublishAt).inMilliseconds <
+          _moveNetUiIntervalMs) {
     _framesThisSecond += 1;
-    final now = DateTime.now();
     if (now.difference(_fpsWindowStart).inMilliseconds >= 1000) {
       _fps = _framesThisSecond;
       _framesThisSecond = 0;
       _fpsWindowStart = now;
     }
+    return;
   }
 
+  if (shouldThrottleUi) {
+    _lastMoveNetUiPublishAt = now;
+  }
+
+  _poseNotifier.value = pose;
+  _analysisNotifier.value = analysis;
+
+  _framesThisSecond += 1;
+  if (now.difference(_fpsWindowStart).inMilliseconds >= 1000) {
+    _fps = _framesThisSecond;
+    _framesThisSecond = 0;
+    _fpsWindowStart = now;
+  }
+}
+
+  /// 记录单次推理耗时，并更新平均推理时间。
   void _recordPerformance(double inferenceMs) {
     _inferenceSamples += 1;
     _avgInferenceMs += (inferenceMs - _avgInferenceMs) / _inferenceSamples;
   }
 
+  /// 记录端到端延迟，并更新平均端到端耗时。
   void _recordE2ELatency(double e2eMs) {
     _e2eSamples += 1;
     _avgE2ELatencyMs += (e2eMs - _avgE2ELatencyMs) / _e2eSamples;
   }
 
+  /// 定时检查相机是否长时间无新帧，用于自动恢复卡死情况。
   void _startCameraHealthTimer() {
     _cameraHealthTimer?.cancel();
     _cameraHealthTimer = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -511,6 +550,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     });
   }
 
+  /// 在检测到相机异常时尝试自动重建相机链路。
   Future<void> _attemptCameraRecovery() async {
     if (_cameraRecovering) return;
     _cameraRecovering = true;
@@ -531,6 +571,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
   }
 
+  /// 对 MoveNet 输出做时序平滑，减少关键点抖动和跳点。
   Pose _smoothMoveNetPose(Pose pose) {
     const lowConfidenceHold = 0.28;
     const maxJumpRatio = 0.80;
@@ -595,6 +636,89 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     return nextPose;
   }
 
+  Pose _smoothBlazePose(Pose pose) {
+    const lowConfidenceHold = 0.42;
+    const smallMoveAlpha = 0.20;
+    const normalMoveAlpha = 0.34;
+    const maxJumpRatio = 0.65;
+
+    final previous = _lastSmoothedBlazePose;
+    if (previous == null) {
+      _lastSmoothedBlazePose = pose;
+      return pose;
+    }
+
+    final torsoScale = _estimateTorsoScale(pose, previous);
+    final maxJump = torsoScale * maxJumpRatio;
+    final stillThreshold = torsoScale * 0.025;
+
+    final smoothed = <PoseLandmarkType, PoseLandmark>{};
+
+    for (final type in PoseLandmarkType.values) {
+      final previousPoint = previous.landmarks[type];
+      final currentPoint = pose.landmarks[type];
+
+      if (currentPoint == null) {
+        if (previousPoint != null &&
+            previousPoint.likelihood >= lowConfidenceHold) {
+          smoothed[type] = previousPoint.copyWith(
+            likelihood: previousPoint.likelihood * 0.96,
+          );
+        }
+        continue;
+      }
+
+      if (previousPoint == null) {
+        smoothed[type] = currentPoint;
+        continue;
+      }
+
+      if (currentPoint.likelihood < lowConfidenceHold &&
+          previousPoint.likelihood >= lowConfidenceHold) {
+        smoothed[type] = previousPoint.copyWith(
+          likelihood: math.max(
+            previousPoint.likelihood * 0.95,
+            currentPoint.likelihood,
+          ),
+        );
+        continue;
+      }
+
+      final dx = currentPoint.x - previousPoint.x;
+      final dy = currentPoint.y - previousPoint.y;
+      final dz = currentPoint.z - previousPoint.z;
+      final jump = math.sqrt(dx * dx + dy * dy);
+
+      if (jump > maxJump &&
+          previousPoint.likelihood >= currentPoint.likelihood * 0.85) {
+        smoothed[type] = previousPoint.copyWith(
+          likelihood: math.max(
+            previousPoint.likelihood * 0.93,
+            currentPoint.likelihood,
+          ),
+        );
+        continue;
+      }
+
+      final alpha = jump < stillThreshold ? smallMoveAlpha : normalMoveAlpha;
+
+      smoothed[type] = PoseLandmark(
+        x: previousPoint.x * (1 - alpha) + currentPoint.x * alpha,
+        y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
+        z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
+        likelihood: math.max(
+          currentPoint.likelihood,
+          previousPoint.likelihood * 0.92,
+        ),
+      );
+    }
+
+    final nextPose = pose.copyWith(landmarks: smoothed);
+    _lastSmoothedBlazePose = nextPose;
+    return nextPose;
+  }
+
+  /// 估计当前人体躯干尺度，用来限制关键点允许跳动的幅度。
   double _estimateTorsoScale(Pose current, Pose previous) {
     double fromPose(Pose pose) {
       final leftShoulder = pose[PoseLandmarkType.leftShoulder];
@@ -617,6 +741,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     return math.max(36, math.max(currentScale, previousScale));
   }
 
+  /// 判断当前姿态点是否足够可靠，值得继续进入动作分析阶段。
   bool _hasReliableAnalysisPose(Pose pose) {
     final torso = <PoseLandmark?>[
       pose[PoseLandmarkType.leftShoulder],
@@ -638,6 +763,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     return reliableCount >= minReliableLandmarks;
   }
 
+  /// 按节流规则播放语音反馈，避免过于频繁地打断用户。
   Future<void> _maybeSpeakFeedback(ExerciseAnalysisResult analysis) async {
     if (!_voiceEnabled) return;
     if (analysis.issues.isEmpty && !analysis.repJustCountedClean) {
@@ -663,6 +789,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     );
   }
 
+  /// 切换前后摄像头，并重置当前识别会话的瞬时状态。
   Future<void> _toggleCameraLensDirection() async {
     setState(() {
       _ready = false;
@@ -670,6 +797,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       _currentPose = null;
       _lastStablePose = null;
       _lastSmoothedMoveNetPose = null;
+      _lastSmoothedBlazePose = null;
       _lastPoseSeenAt = null;
       _analysis = null;
       _actionRecognitionArmed = false;
@@ -691,6 +819,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     await _initCameras();
   }
 
+  /// 释放页面持有的控制器、定时器和识别资源。
   @override
   void dispose() {
     _stabilityTimer?.cancel();
@@ -708,6 +837,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     super.dispose();
   }
 
+  /// 把当前会话的稳定性统计写入本地日志文件。
   Future<void> _persistStabilityReport({required bool tenMinuteReached}) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -733,6 +863,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
   }
 
+  /// 构建姿态检测页面，包括相机预览、信息卡片和反馈区域。
   @override
   Widget build(BuildContext context) {
     final controller = _primaryController;
@@ -761,6 +892,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
                       _currentPose = null;
                       _lastStablePose = null;
                       _lastSmoothedMoveNetPose = null;
+                      _lastSmoothedBlazePose = null;
                       _lastPoseSeenAt = null;
                       _analysis = null;
                       _actionRecognitionArmed = false;
@@ -841,6 +973,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     );
   }
 
+  /// 构建加载中或错误状态下的占位界面。
   Widget _buildLoadingOrErrorState() {
     final showActions = _cameraPermissionDenied || _status.contains('失败');
     final buttonLabel = _cameraPermissionPermanentlyDenied
@@ -906,6 +1039,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     );
   }
 
+  /// 构建自适应尺寸的相机预览，并叠加姿态骨架绘制层。
   Widget _buildAdaptiveCameraPreview(CameraController controller) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -954,6 +1088,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     );
   }
 
+  /// 构建顶部信息卡，展示动作、分数、延迟和帧率等信息。
   Widget _buildInfoCard(ExerciseAnalysisResult? analysis) {
     final countLabel =
         widget.exerciseType == ExerciseType.plank ? '保持(秒)' : '次数';
@@ -999,6 +1134,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     );
   }
 
+  /// 构建单个指标展示块。
   Widget _metricItem(String label, String value) {
     return Container(
       width: 64,
@@ -1031,6 +1167,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     );
   }
 
+  /// 构建底部反馈卡，展示当前提示语和纠正建议。
   Widget _buildFeedbackCard(ExerciseAnalysisResult? analysis) {
     final issue = analysis != null && analysis.issues.isNotEmpty
         ? analysis.issues.first

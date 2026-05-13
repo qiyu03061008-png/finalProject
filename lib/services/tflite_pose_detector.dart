@@ -7,11 +7,10 @@ import 'package:tflite_flutter/tflite_flutter.dart' as tflite;
 
 import '../models/pose_landmark.dart';
 
-/// MoveNet single-person detector based on TFLite inference.
+/// 基于 TFLite 推理的 MoveNet 单人姿态检测器。
 ///
-/// This version prefers broad device compatibility over aggressive
-/// optimization. Some lower-level buffer optimizations were causing
-/// invalid inference output on certain Android devices.
+/// 当前实现优先保证设备兼容性，而不是追求激进优化。
+/// 一些更底层的缓冲区优化在部分 Android 设备上会导致推理结果异常。
 class TFLitePoseDetector {
   tflite.Interpreter? _interpreter;
   bool _initialized = false;
@@ -46,14 +45,16 @@ class TFLitePoseDetector {
         16: PoseLandmarkType.rightAnkle,
       };
 
+  /// 返回检测器是否已经完成初始化并可用。
   bool get isReady => _initialized && _interpreter != null;
 
+  /// 加载 MoveNet 模型，并初始化输入输出张量信息。
   Future<void> initialize() async {
     if (_initialized) return;
     try {
       final interpreter = await tflite.Interpreter.fromAsset(
         'assets/models/movenet_lightning.tflite',
-        options: tflite.InterpreterOptions()..threads = 1,
+        options: tflite.InterpreterOptions()..threads = 2,
       );
       final inputTensor = interpreter.getInputTensor(0);
       final inputShape = inputTensor.shape;
@@ -83,23 +84,27 @@ class TFLitePoseDetector {
     }
   }
 
+  /// 从相机帧中检测人体姿态。
   Future<Pose?> detectPoseFromCamera(
-    CameraImage cameraImage,
-    CameraDescription camera,
-  ) async {
-    if (!isReady) return null;
+  CameraImage cameraImage,
+  CameraDescription camera,
+) async {
+  if (!isReady) return null;
 
-    final rawImage = _cameraImageToRgb(cameraImage);
-    if (rawImage == null) return null;
-    final upright =
-        _rotateToDisplayOrientation(rawImage, camera.sensorOrientation);
-    return _detectFromImage(
-      upright,
-      source: 'movenet_camera',
-      timestamp: DateTime.now(),
-    );
-  }
+  final prep = _cameraImageToLetterboxInput(
+    cameraImage,
+    camera.sensorOrientation,
+  );
+  if (prep == null) return null;
 
+  return _detectPreparedInput(
+    prep,
+    source: 'movenet_camera_fast',
+    timestamp: DateTime.now(),
+  );
+}
+
+  /// 从静态图片字节中检测人体姿态。
   Future<Pose?> detectPose(Uint8List imageBytes, int width, int height) async {
     if (!isReady) return null;
     final decoded = img.decodeImage(imageBytes);
@@ -111,6 +116,7 @@ class TFLitePoseDetector {
     );
   }
 
+  /// 对一张已经解码的图片执行一次完整的 MoveNet 推理。
   Pose? _detectFromImage(
     img.Image image, {
     required String source,
@@ -139,6 +145,35 @@ class TFLitePoseDetector {
     );
   }
 
+Pose? _detectPreparedInput(
+  _LetterboxPrep prep, {
+  required String source,
+  required DateTime timestamp,
+}) {
+  final interpreter = _interpreter;
+  if (!_initialized || interpreter == null) return null;
+
+  final output = _outputBuffer ??= _createOutputBuffer();
+  _resetOutputBuffer(output);
+
+  interpreter.run(prep.input, output);
+
+  final keypoints = _extractKeypoints(output);
+  if (keypoints.length < 17) return null;
+
+  return _mapKeypointsToPose(
+    keypoints: keypoints,
+    sourceWidth: prep.sourceWidth,
+    sourceHeight: prep.sourceHeight,
+    scale: prep.scale,
+    padX: prep.padX,
+    padY: prep.padY,
+    source: source,
+    timestamp: timestamp,
+  );
+}
+
+  /// 把 MoveNet 输出的关键点结果映射成项目内部的 Pose 对象。
   Pose? _mapKeypointsToPose({
     required List<(double, double, double)> keypoints,
     required int sourceWidth,
@@ -186,6 +221,7 @@ class TFLitePoseDetector {
     );
   }
 
+  /// 把输入图片按比例缩放并补边到模型要求的输入尺寸。
   _LetterboxPrep _letterboxToInput(img.Image image) {
     final scale =
         math.min(_inputWidth / image.width, _inputHeight / image.height);
@@ -222,9 +258,141 @@ class TFLitePoseDetector {
         }
       }
     }
-    return _LetterboxPrep(input, scale, padX, padY);
+    return _LetterboxPrep(input, scale, padX, padY, image.width, image.height);
   }
 
+
+_LetterboxPrep? _cameraImageToLetterboxInput(
+  CameraImage image,
+  int sensorOrientation,
+) {
+  if (image.planes.isEmpty) return null;
+
+  // iOS 或部分设备可能是 BGRA，这种情况仍然走旧逻辑
+  if (image.format.group == ImageFormatGroup.bgra8888) {
+    final raw = _bgra8888ToImage(image);
+    if (raw == null) return null;
+    final upright = _rotateToDisplayOrientation(raw, sensorOrientation);
+    return _letterboxToInput(upright);
+  }
+
+  final yPlane = image.planes.first;
+  final yBytes = yPlane.bytes;
+  final yRowStride = yPlane.bytesPerRow;
+  final yPixelStride = yPlane.bytesPerPixel ?? 1;
+
+  final srcWidth = image.width;
+  final srcHeight = image.height;
+
+  final rotation = ((sensorOrientation % 360) + 360) % 360;
+  final rotated = rotation == 90 || rotation == 270;
+
+  final uprightWidth = rotated ? srcHeight : srcWidth;
+  final uprightHeight = rotated ? srcWidth : srcHeight;
+
+  final scale = math.min(
+    _inputWidth / uprightWidth,
+    _inputHeight / uprightHeight,
+  );
+
+  final resizedWidth = math.max(1, (uprightWidth * scale).round());
+  final resizedHeight = math.max(1, (uprightHeight * scale).round());
+
+  final padX = (_inputWidth - resizedWidth) / 2.0;
+  final padY = (_inputHeight - resizedHeight) / 2.0;
+
+  final input = _inputBuffer ??= _createInputBuffer();
+  final frame = (input as List).first as List;
+
+  for (var y = 0; y < _inputHeight; y++) {
+    final row = frame[y] as List;
+
+    for (var x = 0; x < _inputWidth; x++) {
+      final pixel = row[x] as List;
+
+      final insideImage = x >= padX &&
+          x < padX + resizedWidth &&
+          y >= padY &&
+          y < padY + resizedHeight;
+
+      int value = 0;
+
+      if (insideImage) {
+        final uprightX = ((x - padX) / scale)
+            .clamp(0.0, uprightWidth - 1.0)
+            .round();
+        final uprightY = ((y - padY) / scale)
+            .clamp(0.0, uprightHeight - 1.0)
+            .round();
+
+        final sourcePoint = _uprightToSourcePoint(
+          uprightX,
+          uprightY,
+          srcWidth,
+          srcHeight,
+          rotation,
+        );
+
+        final sourceX = sourcePoint.x.clamp(0, srcWidth - 1).toInt();
+        final sourceY = sourcePoint.y.clamp(0, srcHeight - 1).toInt();
+
+        final yIndex = sourceY * yRowStride + sourceX * yPixelStride;
+        if (yIndex >= 0 && yIndex < yBytes.length) {
+          value = yBytes[yIndex];
+        }
+      }
+
+      if (_inputType == tflite.TensorType.uint8) {
+        pixel[0] = value;
+        pixel[1] = value;
+        pixel[2] = value;
+      } else {
+        final normalized = value / 255.0;
+        pixel[0] = normalized;
+        pixel[1] = normalized;
+        pixel[2] = normalized;
+      }
+    }
+  }
+
+  return _LetterboxPrep(
+    input,
+    scale,
+    padX,
+    padY,
+    uprightWidth,
+    uprightHeight,
+  );
+}
+
+math.Point<int> _uprightToSourcePoint(
+  int uprightX,
+  int uprightY,
+  int sourceWidth,
+  int sourceHeight,
+  int rotation,
+) {
+  switch (rotation) {
+    case 90:
+      return math.Point<int>(
+        uprightY,
+        sourceHeight - 1 - uprightX,
+      );
+    case 180:
+      return math.Point<int>(
+        sourceWidth - 1 - uprightX,
+        sourceHeight - 1 - uprightY,
+      );
+    case 270:
+      return math.Point<int>(
+        sourceWidth - 1 - uprightY,
+        uprightX,
+      );
+    default:
+      return math.Point<int>(uprightX, uprightY);
+  }
+}
+  /// 创建与输入张量类型匹配的缓冲区。
   Object _createInputBuffer() {
     if (_inputType == tflite.TensorType.uint8) {
       return List.generate(
@@ -257,6 +425,7 @@ class TFLitePoseDetector {
     );
   }
 
+  /// 创建与输出张量形状匹配的缓冲区。
   Object _createOutputBuffer() {
     final is173 =
         _outputShape.length == 3 &&
@@ -317,11 +486,13 @@ class TFLitePoseDetector {
     );
   }
 
+  /// 在每次推理前清空输出缓冲区中的旧结果。
   void _resetOutputBuffer(Object output) {
     if (output is! List) return;
     _resetNestedList(output);
   }
 
+  /// 递归清零嵌套列表中的数值内容。
   void _resetNestedList(List values) {
     for (var i = 0; i < values.length; i++) {
       final value = values[i];
@@ -335,6 +506,7 @@ class TFLitePoseDetector {
     }
   }
 
+  /// 从模型输出缓冲区中提取关键点坐标和置信度。
   List<(double, double, double)> _extractKeypoints(Object output) {
     final result = <(double, double, double)>[];
     if (output is! List || output.isEmpty) return result;
@@ -356,6 +528,7 @@ class TFLitePoseDetector {
     return result;
   }
 
+  /// 把不同数值类型统一转换成 double。
   double _asDouble(Object value) {
     if (value is double) return value;
     if (value is int) return value.toDouble();
@@ -363,6 +536,7 @@ class TFLitePoseDetector {
     return 0.0;
   }
 
+  /// 把相机原始帧转换为 RGB 图片对象。
   img.Image? _cameraImageToRgb(CameraImage image) {
     if (image.format.group == ImageFormatGroup.bgra8888) {
       return _bgra8888ToImage(image);
@@ -374,6 +548,7 @@ class TFLitePoseDetector {
     return null;
   }
 
+  /// 按相机传感器方向把图片旋转到便于显示和推理的朝向。
   img.Image _rotateToDisplayOrientation(img.Image src, int sensorOrientation) {
     switch (sensorOrientation) {
       case 90:
@@ -387,6 +562,7 @@ class TFLitePoseDetector {
     }
   }
 
+  /// 把 BGRA8888 格式的相机图像转换为 `image` 包的图片对象。
   img.Image? _bgra8888ToImage(CameraImage image) {
     if (image.planes.isEmpty) return null;
     final plane = image.planes.first;
@@ -410,6 +586,7 @@ class TFLitePoseDetector {
     return out;
   }
 
+  /// 把 YUV420 格式的相机图像转换为 RGB 图片对象。
   img.Image? _yuv420ToImage(CameraImage image) {
     if (image.planes.length < 3) return null;
     final width = image.width;
@@ -457,6 +634,7 @@ class TFLitePoseDetector {
     return out;
   }
 
+  /// 根据已有人脸关键点补充项目里需要的派生面部点位。
   void _addDerivedFaceLandmarks(Map<PoseLandmarkType, PoseLandmark> mapped) {
     final nose = mapped[PoseLandmarkType.nose];
     final leftEye = mapped[PoseLandmarkType.leftEye];
@@ -494,6 +672,7 @@ class TFLitePoseDetector {
     }
   }
 
+  /// 用躯干关键点做一次基础校验，过滤明显不像人的结果。
   bool _looksLikeHuman(Map<PoseLandmarkType, PoseLandmark> mapped) {
     final leftShoulder = mapped[PoseLandmarkType.leftShoulder];
     final rightShoulder = mapped[PoseLandmarkType.rightShoulder];
@@ -514,6 +693,7 @@ class TFLitePoseDetector {
     return torsoReliableCount >= 3;
   }
 
+  /// 释放解释器和内部缓冲区资源。
   void dispose() {
     _interpreter?.close();
     _interpreter = null;
@@ -524,10 +704,19 @@ class TFLitePoseDetector {
 }
 
 class _LetterboxPrep {
-  const _LetterboxPrep(this.input, this.scale, this.padX, this.padY);
+  const _LetterboxPrep(
+    this.input,
+    this.scale,
+    this.padX,
+    this.padY,
+    this.sourceWidth,
+    this.sourceHeight,
+  );
 
   final Object input;
   final double scale;
   final double padX;
   final double padY;
+  final int sourceWidth;
+  final int sourceHeight;
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
 import 'services/threshold_config_service.dart';
 
+/// 初始化 Flutter，并在应用启动前加载动作阈值配置。
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThresholdConfigService().loadConfig();
@@ -12,6 +13,7 @@ Future<void> main() async {
 class FitnessPoseApp extends StatelessWidget {
   const FitnessPoseApp({super.key});
 
+  /// 构建应用的全局主题，并设置首页入口。
   @override
   Widget build(BuildContext context) {
     const seed = Color(0xFF11998E);

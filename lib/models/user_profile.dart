@@ -19,6 +19,7 @@ class UserProfile {
   final String? gender; // 'male', 'female', or null
   final String createdAtIso;
 
+  /// 返回一份默认用户体型配置。
   static UserProfile defaultProfile() {
     return UserProfile(
       heightCm: 170,
@@ -31,6 +32,7 @@ class UserProfile {
     );
   }
 
+  /// 把用户体型数据序列化成 JSON 对象。
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'heightCm': heightCm,
@@ -43,6 +45,7 @@ class UserProfile {
     };
   }
 
+  /// 从 JSON 对象恢复用户体型数据。
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       heightCm: (json['heightCm'] as num?)?.toDouble() ?? 170,
@@ -57,8 +60,8 @@ class UserProfile {
     );
   }
 
-  /// Approximate SMPL-like shape code (beta proxy) from personal anthropometrics.
-  /// This is a lightweight surrogate for on-device personalization.
+  /// 根据用户体型参数生成近似的 SMPL 风格形体编码。
+  /// 这是一个更轻量的替代方案，用于端侧个性化。
   List<double> toSmplShapeCode() {
     final heightN = (heightCm - 170) / 30;
     final weightN = (weightKg - 65) / 25;
@@ -126,6 +129,7 @@ class PersonalizedThresholds {
   final double plankHipPikeOffset;
   final double maxNeckAngle;
 
+  /// 根据用户体型和视角信息生成个性化动作阈值。
   factory PersonalizedThresholds.fromProfile(
     UserProfile profile, {
     String viewTag = 'front',
@@ -300,6 +304,7 @@ class PersonalizedThresholds {
     );
   }
 
+  /// 规范化视角标签，只保留系统支持的取值。
   static String _normalizeViewTag(String viewTag) {
     switch (viewTag.trim().toLowerCase()) {
       case 'side':

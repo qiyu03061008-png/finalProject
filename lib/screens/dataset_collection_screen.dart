@@ -241,6 +241,7 @@ class _DatasetCollectionScreenState extends State<DatasetCollectionScreen> {
     return false;
   }
 
+  //每一帧图像处理流程（核心）
   Future<void> _onPrimaryFrame(CameraImage image) async {
     final camera = _primaryCamera;
     if (camera == null) return;

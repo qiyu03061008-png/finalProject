@@ -41,32 +41,54 @@ class PosePainter extends CustomPainter {
   }
 
   void _drawSkeleton(Canvas canvas) {
-    final paint = Paint()
-      ..color = const Color(0xFF16A34A)
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
+  final shadowPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.32)
+    ..strokeWidth = 7
+    ..strokeCap = StrokeCap.round
+    ..style = PaintingStyle.stroke;
 
-    for (final pair in _connections) {
-      final p1 = pose[pair[0]];
-      final p2 = pose[pair[1]];
-      if (p1 == null || p2 == null) continue;
+  final bonePaint = Paint()
+    ..color = const Color(0xFF2DD4BF)
+    ..strokeWidth = 4
+    ..strokeCap = StrokeCap.round
+    ..style = PaintingStyle.stroke;
 
-      final start = _toCanvasOffset(Offset(p1.x, p1.y));
-      final end = _toCanvasOffset(Offset(p2.x, p2.y));
-      canvas.drawLine(start, end, paint);
-    }
+  for (final pair in _connections) {
+    final p1 = pose[pair[0]];
+    final p2 = pose[pair[1]];
+    if (p1 == null || p2 == null) continue;
+
+    if (p1.likelihood < 0.18 || p2.likelihood < 0.18) continue;
+
+    final start = _toCanvasOffset(Offset(p1.x, p1.y));
+    final end = _toCanvasOffset(Offset(p2.x, p2.y));
+
+    canvas.drawLine(start, end, shadowPaint);
+    canvas.drawLine(start, end, bonePaint);
   }
-
+}
+//把每个关键点画成圆点
   void _drawLandmarks(Canvas canvas) {
-    final high = Paint()..color = const Color(0xFF06B6D4);
-    final low = Paint()..color = const Color(0xFFF59E0B);
-    for (final point in pose.landmarks.values) {
-      final canvasPoint = _toCanvasOffset(Offset(point.x, point.y));
-      final paint = point.likelihood > 0.6 ? high : low;
-      canvas.drawCircle(canvasPoint, 4.5, paint);
-    }
-  }
+  final outerPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.92);
 
+  final highPaint = Paint()
+    ..color = const Color(0xFF22D3EE);
+
+  final lowPaint = Paint()
+    ..color = const Color(0xFFFBBF24);
+
+  for (final point in pose.landmarks.values) {
+    if (point.likelihood < 0.18) continue;
+
+    final canvasPoint = _toCanvasOffset(Offset(point.x, point.y));
+    final paint = point.likelihood > 0.6 ? highPaint : lowPaint;
+
+    canvas.drawCircle(canvasPoint, 6.2, outerPaint);
+    canvas.drawCircle(canvasPoint, 4.2, paint);
+  }
+}
+//把模型输出的图像坐标映射到屏幕画布坐标。
   Offset _toCanvasOffset(Offset source) {
     final sx = canvasSize.width / imageSize.width;
     final sy = canvasSize.height / imageSize.height;

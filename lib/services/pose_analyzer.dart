@@ -6,15 +6,17 @@ import '../models/user_profile.dart';
 import 'pose_metric_calculator.dart';
 
 class PoseAnalyzer {
+  // 状态至少持续若干帧才算真正切换，避免单帧抖动导致误判。
   static const int _stateHoldFrames = 2;
   static const int _maxMissingFramesToKeepState = 6;
+  // 一次完整动作至少要有一个最短时长，过滤“抖一下就计数”的情况。
   static const int _minRepPhaseMs = 140;
   static const String _cleanRepPraise = '动作不错。继续保持';
 
   static const int _issueOnFrames = 2;
-  static const int _issueOffFrames = 1;
-  static const double _emaFast = 0.45;
-  static const double _emaSlow = 0.35;
+  static const int _issueOffFrames = 2;
+  static const double _emaFast = 0.32;
+  static const double _emaSlow = 0.24;
 
   final PoseMetricCalculator _metricCalculator = const PoseMetricCalculator();
 
@@ -22,8 +24,10 @@ class PoseAnalyzer {
   int _pushupCount = 0;
   double _plankHoldSeconds = 0;
 
+  // `Down` 表示当前是否处在动作最低点附近。
   bool _squatDown = false;
   bool _pushupDown = false;
+  // streak 用连续帧数确认状态切换，而不是看单帧结果。
   int _squatDownStreak = 0;
   int _squatUpStreak = 0;
   int _pushupDownStreak = 0;
@@ -31,6 +35,7 @@ class PoseAnalyzer {
   int _squatMissingFrames = 0;
   int _pushupMissingFrames = 0;
 
+  // 下面这一组状态用来描述“这一整次动作”是否合格。
   bool _squatRepSeenDown = false;
   bool _squatRepReachedDepth = false;
   bool _squatRepHasIssue = false;
@@ -50,6 +55,7 @@ class PoseAnalyzer {
   final Map<PoseErrorType, int> _issueOffStreak = <PoseErrorType, int>{};
   final Set<PoseErrorType> _latchedIssues = <PoseErrorType>{};
 
+  /// 分析单帧姿态数据，并按动作类型分发到对应的分析逻辑。
   ExerciseAnalysisResult analyze({
     required Pose pose,
     required ExerciseType exerciseType,
@@ -57,6 +63,7 @@ class PoseAnalyzer {
     String? viewTag,
   }) {
     final snapshot = _metricCalculator.calculate(pose);
+    // 外部传入的视角优先；如果没有，就使用当前帧自动推断的视角。
     final resolvedViewTag =
         _normalizeViewTag(viewTag) ?? snapshot.inferredViewTag;
     final thresholds = PersonalizedThresholds.fromProfile(
@@ -74,6 +81,7 @@ class PoseAnalyzer {
     }
   }
 
+  /// 分析深蹲动作，判断状态切换、计数结果和常见动作问题。
   ExerciseAnalysisResult _analyzeSquat(
     Pose pose,
     PoseMetricSnapshot snapshot,
@@ -86,13 +94,22 @@ class PoseAnalyzer {
     var repJustCountedClean = false;
 
     final isMoveNet = pose.source.startsWith('movenet');
+    // 不同模型稳定性不同，所以进入/离开动作相位的门槛会略有区别。
     final holdFrames =
         (pose.source == 'blazepose' || isMoveNet) ? 1 : _stateHoldFrames;
     final squatUpGate = isMoveNet
         ? (t.squatUpAngle - 20)
         : pose.source == 'blazepose'
-            ? (t.squatUpAngle - 10)
-            : (t.squatUpAngle - 6);
+        ? (t.squatUpAngle - 10)
+        : (t.squatUpAngle - 6);
+
+// 进入“正在下蹲”的角度要比真正达标角度宽松。
+// 否则浅蹲动作根本进不了 _squatDown，自然不会提示浅蹲。
+    final squatStartAngle = math.min(
+      t.squatUpAngle - 8,
+      t.squatDownAngle + 34,
+    );
+
     final depthReachFactor = isMoveNet ? 1.05 : 0.65;
 
     final kneeAngle = _smoothMetric(
@@ -119,15 +136,18 @@ class PoseAnalyzer {
     if (kneeAngle != null) {
       _squatMissingFrames = 0;
 
-      if (kneeAngle < t.squatDownAngle) {
+      // 膝角足够小，说明正在下蹲。
+      if (kneeAngle < squatStartAngle)  {
         _squatDownStreak += 1;
         _squatUpStreak = 0;
         if (_squatDownStreak >= holdFrames && !_squatDown) {
+          // 真正进入下蹲相位时，记录这一轮动作已经“下去过”。
           _squatDown = true;
           _squatRepSeenDown = true;
           _squatRepMinAngle = kneeAngle;
           _squatPhaseChangedAt = pose.timestamp;
         }
+      // 膝角重新变大，说明正在起身。
       } else if (kneeAngle > squatUpGate) {
         _squatUpStreak += 1;
         _squatDownStreak = 0;
@@ -137,6 +157,7 @@ class PoseAnalyzer {
               : pose.timestamp.difference(_squatPhaseChangedAt!).inMilliseconds;
           _squatDown = false;
           _squatPhaseChangedAt = pose.timestamp;
+          // 只有“下去过 + 深度够 + 速度不过快 + 起身够明显”才算一次完整动作。
           if (_squatRepSeenDown &&
               _squatRepReachedDepth &&
               phaseDurationMs >= _minRepPhaseMs &&
@@ -156,12 +177,14 @@ class PoseAnalyzer {
         _squatUpStreak = 0;
       }
 
+      // 在整个下蹲过程中，持续更新本次动作的最小膝角。
       if (_squatDown) {
         _squatRepMinAngle = _squatRepMinAngle == null
             ? kneeAngle
             : math.min(_squatRepMinAngle!, kneeAngle);
       }
 
+      // 只要下蹲时达到过目标深度，就把本轮动作标记为“深度达标”。
       if (_squatDown &&
           kneeAngle <=
               (t.squatDownAngle + t.shallowSquatMargin * depthReachFactor)) {
@@ -170,14 +193,17 @@ class PoseAnalyzer {
 
       final shallow = _stableIssue(
         type: PoseErrorType.shallowSquat,
-        active:
-            kneeAngle > t.squatDownAngle + t.shallowSquatMargin && _squatDown,
+        active: _squatDown &&
+            !_squatRepReachedDepth &&
+            _squatRepMinAngle != null &&
+            kneeAngle > _squatRepMinAngle! + 6 &&
+            kneeAngle > t.squatDownAngle + t.shallowSquatMargin * 0.8,
         onFrames: isMoveNet ? 1 : _issueOnFrames,
         build: () => const PoseIssue(
           type: PoseErrorType.shallowSquat,
           message: '下蹲深度不够',
-          suggestion: '继续下蹲，稳定达到目标深度后再起身',
-          severity: 0.6,
+          suggestion: '刚才下蹲没有达到目标深度，下次继续下蹲后再起身',
+          severity: 0.68,
         ),
       );
       if (shallow != null) {
@@ -185,6 +211,7 @@ class PoseAnalyzer {
         _squatRepHasIssue = true;
       }
     } else {
+      // 关键角度暂时丢失时，不马上清空状态，给检测抖动留一点容错空间。
       _squatMissingFrames += 1;
       _squatDownStreak = 0;
       _squatUpStreak = 0;
@@ -201,7 +228,8 @@ class PoseAnalyzer {
     if (torsoLeanDeg != null) {
       final torsoLeanIssue = _stableIssue(
         type: PoseErrorType.torsoLeanForward,
-        active: torsoLeanDeg > t.maxTorsoLeanDeg - (isMoveNet ? 2 : 0),
+        active: (_squatDown || _squatRepSeenDown) &&
+            torsoLeanDeg > t.maxTorsoLeanDeg + (isMoveNet ? 0 : 3),
         build: () => PoseIssue(
           type: PoseErrorType.torsoLeanForward,
           message: '躯干前倾过多',
@@ -222,7 +250,8 @@ class PoseAnalyzer {
           : '让膝盖始终跟随脚尖方向移动';
       final kneeValgusIssue = _stableIssue(
         type: PoseErrorType.kneeValgus,
-        active: kneeInward < t.maxKneeInwardRatio + (isMoveNet ? 0.03 : 0),
+        active: (_squatDown || _squatRepSeenDown) &&
+            kneeInward < t.maxKneeInwardRatio + (isMoveNet ? 0.03 : 0),
         build: () => PoseIssue(
           type: PoseErrorType.kneeValgus,
           message: '检测到膝盖内扣',
@@ -243,7 +272,8 @@ class PoseAnalyzer {
           : '稳住脚跟，控制膝盖前移幅度';
       final kneeToeIssue = _stableIssue(
         type: PoseErrorType.kneeOverToe,
-        active: kneeOverToe > t.maxKneeOverToe - (isMoveNet ? 0.03 : 0),
+        active: (_squatDown || _squatRepSeenDown) &&
+            kneeOverToe > t.maxKneeOverToe - (isMoveNet ? 0.03 : 0),
         build: () => PoseIssue(
           type: PoseErrorType.kneeOverToe,
           message: '膝盖前移过多',
@@ -284,6 +314,7 @@ class PoseAnalyzer {
     );
   }
 
+  /// 分析俯卧撑动作，判断状态切换、计数结果和动作问题。
   ExerciseAnalysisResult _analyzePushup(
     Pose pose,
     PoseMetricSnapshot snapshot,
@@ -296,6 +327,7 @@ class PoseAnalyzer {
     var repJustCountedClean = false;
 
     final isMoveNet = pose.source.startsWith('movenet');
+    // 与深蹲相同，俯卧撑也会按模型来源微调判定门槛。
     final holdFrames =
         (pose.source == 'blazepose' || isMoveNet) ? 1 : _stateHoldFrames;
     final pushupUpGate = isMoveNet
@@ -333,6 +365,7 @@ class PoseAnalyzer {
     if (elbowAngle != null) {
       _pushupMissingFrames = 0;
 
+      // 手肘弯曲到足够小，说明已经下放到底部附近。
       if (elbowAngle < t.pushupDownAngle) {
         _pushupDownStreak += 1;
         _pushupUpStreak = 0;
@@ -353,6 +386,7 @@ class PoseAnalyzer {
                   .inMilliseconds;
           _pushupDown = false;
           _pushupPhaseChangedAt = pose.timestamp;
+          // 俯卧撑计数逻辑与深蹲一致：必须完成一整次“下去再起来”。
           if (_pushupRepSeenDown &&
               _pushupRepReachedDepth &&
               phaseDurationMs >= _minRepPhaseMs &&
@@ -372,12 +406,14 @@ class PoseAnalyzer {
         _pushupUpStreak = 0;
       }
 
+      // 记录这一轮俯卧撑最低时的手肘角度，后面用来判断是否真的推起。
       if (_pushupDown) {
         _pushupRepMinAngle = _pushupRepMinAngle == null
             ? elbowAngle
             : math.min(_pushupRepMinAngle!, elbowAngle);
       }
 
+      // 达到过目标深度即可，不要求在最低点连续停留。
       if (_pushupDown &&
           elbowAngle <= (t.pushupDownAngle + t.pushupDepthMargin * 0.65)) {
         _pushupRepReachedDepth = true;
@@ -400,6 +436,7 @@ class PoseAnalyzer {
         _pushupRepHasIssue = true;
       }
     } else {
+      // 与深蹲相同，短暂丢帧先保留状态，持续丢失再重置。
       _pushupMissingFrames += 1;
       _pushupDownStreak = 0;
       _pushupUpStreak = 0;
@@ -502,6 +539,7 @@ class PoseAnalyzer {
     );
   }
 
+  /// 分析平板支撑动作，在检查身体稳定性的同时累计有效时长。
   ExerciseAnalysisResult _analyzePlank(
     Pose pose,
     PoseMetricSnapshot snapshot,
@@ -537,6 +575,7 @@ class PoseAnalyzer {
         : now.difference(_lastPlankTimestamp!).inMilliseconds / 1000.0;
     _lastPlankTimestamp = now;
 
+    // 平板支撑没有“次数”，这里只判断身体是否保持在中立区间。
     final neutralDeviationLimit = math.max(
       (180 - t.plankNeutralMin).abs(),
       (t.plankNeutralMax - 180).abs(),
@@ -591,6 +630,7 @@ class PoseAnalyzer {
       }
     }
 
+    // 只有当前没有明显问题时，才累计本段支撑时长。
     if (issues.isEmpty && dt > 0 && dt < 0.8) {
       _plankHoldSeconds += dt;
     }
@@ -622,6 +662,7 @@ class PoseAnalyzer {
     );
   }
 
+  /// 重置指定动作的计数器和过程状态，开始一轮新的识别。
   void reset(ExerciseType type) {
     switch (type) {
       case ExerciseType.squat:
@@ -660,6 +701,7 @@ class PoseAnalyzer {
   }
 
   int _scoreFromIssues(List<PoseIssue> issues) {
+    // 每个问题按严重程度扣分，并保留一个最低分，避免体验过于极端。
     final deduction = issues.fold<double>(
       0,
       (sum, item) => sum + item.severity * 22,
@@ -668,6 +710,7 @@ class PoseAnalyzer {
   }
 
   List<PoseIssue> _sortedIssues(List<PoseIssue> issues) {
+    // 让最严重的问题排在最前面，方便 UI 和语音优先提醒。
     final sorted = <PoseIssue>[...issues]
       ..sort((a, b) => b.severity.compareTo(a.severity));
     return sorted;
@@ -677,11 +720,13 @@ class PoseAnalyzer {
     if (issues.isEmpty) {
       return fallback;
     }
+    // 当前只返回最严重问题的文案，避免同时提示太多内容。
     final sorted = <PoseIssue>[...issues]
       ..sort((a, b) => b.severity.compareTo(a.severity));
     return sorted.first.message;
   }
 
+  /// 用连续帧锁存问题状态，避免提示在抖动数据中频繁闪烁。
   PoseIssue? _stableIssue({
     required PoseErrorType type,
     required bool active,
@@ -690,12 +735,14 @@ class PoseAnalyzer {
     int offFrames = _issueOffFrames,
   }) {
     if (active) {
+      // 连续多帧都为 active，才真正挂上这个问题。
       _issueOnStreak[type] = (_issueOnStreak[type] ?? 0) + 1;
       _issueOffStreak[type] = 0;
       if ((_issueOnStreak[type] ?? 0) >= onFrames) {
         _latchedIssues.add(type);
       }
     } else {
+      // 反过来，连续若干帧恢复正常后，再把问题撤掉。
       _issueOnStreak[type] = 0;
       _issueOffStreak[type] = (_issueOffStreak[type] ?? 0) + 1;
       if ((_issueOffStreak[type] ?? 0) >= offFrames) {
@@ -705,23 +752,29 @@ class PoseAnalyzer {
     return _latchedIssues.contains(type) ? build() : null;
   }
 
+  /// 对指标做 EMA 平滑，减少抖动对计数和反馈的影响。
   double? _smoothMetric(String key, double? value, {double alpha = _emaFast}) {
     if (value == null || value.isNaN || value.isInfinite) {
       return null;
     }
     final previous = _emaMetrics[key];
+    // EMA: 新值保留一部分，旧值保留一部分，减少抖动。
     final smoothed =
         previous == null ? value : previous * (1 - alpha) + value * alpha;
     _emaMetrics[key] = smoothed;
     return smoothed;
   }
 
+  /// 判断深蹲是否已经明显起身，只有满足条件才允许计数。
   bool _hasSquatRecoveredEnough(
     double kneeAngle,
     PersonalizedThresholds t,
     bool isMoveNet,
   ) {
     final minAngle = _squatRepMinAngle;
+    // 两种通过方式：
+    // 1. 已经接近站直；
+    // 2. 虽未完全站直，但相比最低点已经明显回弹。
     final nearTop = kneeAngle >= (t.squatUpAngle - (isMoveNet ? 24 : 16));
     final clearRebound = minAngle != null &&
         kneeAngle >=
@@ -732,12 +785,16 @@ class PoseAnalyzer {
     return nearTop || clearRebound;
   }
 
+  /// 判断俯卧撑是否已经明显推起，只有满足条件才允许计数。
   bool _hasPushupRecoveredEnough(
     double elbowAngle,
     PersonalizedThresholds t,
     bool isMoveNet,
   ) {
     final minAngle = _pushupRepMinAngle;
+    // 两种通过方式：
+    // 1. 手肘基本重新伸直；
+    // 2. 相比最低点已经明显推起。
     final nearTop = elbowAngle >= (t.pushupUpAngle - (isMoveNet ? 18 : 16));
     final clearRebound = minAngle != null &&
         elbowAngle >=
@@ -748,6 +805,7 @@ class PoseAnalyzer {
     return nearTop || clearRebound;
   }
 
+  /// 规范化外部传入的视角标签，只保留系统支持的取值。
   String? _normalizeViewTag(String? viewTag) {
     final normalized = viewTag?.trim().toLowerCase();
     switch (normalized) {

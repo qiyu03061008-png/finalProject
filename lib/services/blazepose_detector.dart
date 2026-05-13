@@ -89,6 +89,7 @@ class BlazePoseDetector {
     _closed = true;
   }
 
+
   mlkit.InputImage? _toInputImage(
     CameraImage image,
     CameraDescription camera,

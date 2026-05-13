@@ -27,11 +27,12 @@ class PoseDepthEstimator {
     return pose2d.copyWith(
       landmarks: converted,
       depthMode: PoseDepthMode.monocular,
-      source: 'monocular_approx',
+      source: pose2d.source, // 保留 blazepose / movenet 来源，方便后续分析器判断
       timestamp: pose2d.timestamp,
     );
   }
 
+//计算肩部中心到髋部中心在画面里的像素距离，作为人体在画面中的大小参考
   double _torsoPixels(Pose pose) {
     final leftShoulder = pose[PoseLandmarkType.leftShoulder];
     final rightShoulder = pose[PoseLandmarkType.rightShoulder];
@@ -69,7 +70,7 @@ class PoseDepthEstimator {
       _smoothedDepth[type] = value;
       return value;
     }
-    final smoothed = previous * 0.75 + value * 0.25;
+    final smoothed = previous * 0.75 + value * 0.25;//75%的旧值+25%的新值
     _smoothedDepth[type] = smoothed;
     return smoothed;
   }
