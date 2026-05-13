@@ -1,0 +1,763 @@
+{
+  "schemaVersion": 2,
+  "generatedAtIso": "2026-05-03T20:25:13.846081",
+  "exercises": {
+    "squat": {
+      "front": {
+        "default": {
+          "metrics": {
+            "squatDownAngle": {
+              "selected": 103.14241738317625,
+              "p10": 87.8845542723201,
+              "p50": 131.47844887476626,
+              "p90": 164.2862839892759,
+              "sampleCount": 299,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "squatUpAngle": {
+              "selected": 152.80354169919752,
+              "p10": 87.8845542723201,
+              "p50": 131.47844887476626,
+              "p90": 164.2862839892759,
+              "sampleCount": 299,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "shallowSquatMargin": {
+              "selected": 8.718778920489232,
+              "p10": 87.8845542723201,
+              "p50": 131.47844887476626,
+              "p90": 164.2862839892759,
+              "sampleCount": 299,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "maxTorsoLeanDeg": {
+              "selected": 12.0,
+              "p10": 0.0,
+              "p50": 0.0,
+              "p90": 0.0,
+              "sampleCount": 234,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatTorsoLeanDeg"
+            },
+            "maxKneeInwardRatio": {
+              "selected": 0.7730566942577787,
+              "p10": 0.7730566942577787,
+              "p50": 1.1470940730425647,
+              "p90": 2.0147628625646865,
+              "sampleCount": 209,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "squatKneeInwardRatio"
+            },
+            "maxKneeOverToe": {
+              "selected": 0.45,
+              "p10": 0.05770806727596242,
+              "p50": 0.7881649825081203,
+              "p90": 1.2316102692445614,
+              "sampleCount": 207,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatKneeOverToe"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 316,
+            "errorSampleCount": 45,
+            "errorCounts": {
+              "shallowSquat": 45
+            },
+            "sources": [
+              "QEVD/FIT-COACH+MediaPipe",
+              "data/dataset/fitness_dataset.jsonl"
+            ]
+          }
+        },
+        "medium": {
+          "metrics": {
+            "squatDownAngle": {
+              "selected": 104.32817564485863,
+              "p10": 179.99999914622637,
+              "p50": 179.99999914622637,
+              "p90": 179.99999914622637,
+              "sampleCount": 2,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "squatUpAngle": {
+              "selected": 154.52318752927778,
+              "p10": 179.99999914622637,
+              "p50": 179.99999914622637,
+              "p90": 179.99999914622637,
+              "sampleCount": 2,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "shallowSquatMargin": {
+              "selected": 8.346901028440309,
+              "p10": 179.99999914622637,
+              "p50": 179.99999914622637,
+              "p90": 179.99999914622637,
+              "sampleCount": 2,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "maxTorsoLeanDeg": {
+              "selected": 12.0,
+              "p10": 0.0,
+              "p50": 0.0,
+              "p90": 0.0,
+              "sampleCount": 2,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatTorsoLeanDeg"
+            },
+            "maxKneeInwardRatio": {
+              "selected": 0.7828881216061944,
+              "p10": 0.8713709677419355,
+              "p50": 0.872983870967742,
+              "p90": 0.8745967741935484,
+              "sampleCount": 2,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "squatKneeInwardRatio"
+            },
+            "maxKneeOverToe": {
+              "selected": 0.423,
+              "p10": 0.0001711229844224143,
+              "p50": 0.0001711229844224143,
+              "p90": 0.0001711229844224143,
+              "sampleCount": 2,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatKneeOverToe"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 2,
+            "errorSampleCount": 0,
+            "errorCounts": {},
+            "sources": [
+              "data/dataset/fitness_dataset.jsonl"
+            ]
+          }
+        }
+      },
+      "side": {
+        "default": {
+          "metrics": {
+            "squatDownAngle": {
+              "selected": 107.5,
+              "p10": 119.84544062606703,
+              "p50": 171.2781741626884,
+              "p90": 175.98439850214424,
+              "sampleCount": 10,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "squatUpAngle": {
+              "selected": 164.0,
+              "p10": 119.84544062606703,
+              "p50": 171.2781741626884,
+              "p90": 175.98439850214424,
+              "sampleCount": 10,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "shallowSquatMargin": {
+              "selected": 9.143273353662138,
+              "p10": 119.84544062606703,
+              "p50": 171.2781741626884,
+              "p90": 175.98439850214424,
+              "sampleCount": 10,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "maxTorsoLeanDeg": {
+              "selected": 16.4,
+              "p10": 0.0,
+              "p50": 0.22870058008947816,
+              "p90": 5.230965581224188,
+              "sampleCount": 9,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatTorsoLeanDeg"
+            },
+            "maxKneeInwardRatio": {
+              "selected": 0.7839999999999999,
+              "p10": 0.4989767280275981,
+              "p50": 0.7471400532971918,
+              "p90": 2.052645270469383,
+              "sampleCount": 8,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "squatKneeInwardRatio"
+            },
+            "maxKneeOverToe": {
+              "selected": 0.341959270952323,
+              "p10": 0.062306998822449985,
+              "p50": 0.20446334660422516,
+              "p90": 0.3748981773808075,
+              "sampleCount": 8,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatKneeOverToe"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 10,
+            "errorSampleCount": 3,
+            "errorCounts": {
+              "shallowSquat": 3
+            },
+            "sources": [
+              "QEVD/FIT-COACH+MediaPipe"
+            ]
+          }
+        }
+      },
+      "oblique": {
+        "default": {
+          "metrics": {
+            "squatDownAngle": {
+              "selected": 115.0,
+              "p10": 139.2115029111428,
+              "p50": 164.13196628845336,
+              "p90": 169.66197227868028,
+              "sampleCount": 758,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "squatUpAngle": {
+              "selected": 167.72647018210085,
+              "p10": 139.2115029111428,
+              "p50": 164.13196628845336,
+              "p90": 169.66197227868028,
+              "sampleCount": 758,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "shallowSquatMargin": {
+              "selected": 5.0,
+              "p10": 139.2115029111428,
+              "p50": 164.13196628845336,
+              "p90": 169.66197227868028,
+              "sampleCount": 758,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "squatKneeAngle"
+            },
+            "maxTorsoLeanDeg": {
+              "selected": 13.088456695470747,
+              "p10": 0.0,
+              "p50": 2.738801061575404,
+              "p90": 13.088456695470747,
+              "sampleCount": 677,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatTorsoLeanDeg"
+            },
+            "maxKneeInwardRatio": {
+              "selected": 0.7,
+              "p10": 0.6975892799474064,
+              "p50": 0.8807340027165675,
+              "p90": 1.418235790419006,
+              "sampleCount": 677,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "squatKneeInwardRatio"
+            },
+            "maxKneeOverToe": {
+              "selected": 0.3594949289571496,
+              "p10": 0.0,
+              "p50": 0.1010407124826985,
+              "p90": 0.3594949289571496,
+              "sampleCount": 677,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "squatKneeOverToe"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 759,
+            "errorSampleCount": 165,
+            "errorCounts": {
+              "shallowSquat": 165
+            },
+            "sources": [
+              "QEVD/FIT-COACH+MediaPipe"
+            ]
+          }
+        }
+      }
+    },
+    "pushup": {
+      "front": {
+        "default": {
+          "metrics": {
+            "pushupDownAngle": {
+              "selected": 89.2,
+              "p10": 56.47921521101118,
+              "p50": 68.32630985689175,
+              "p90": 117.5165190062179,
+              "sampleCount": 7,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupUpAngle": {
+              "selected": 156.5,
+              "p10": 56.47921521101118,
+              "p50": 68.32630985689175,
+              "p90": 117.5165190062179,
+              "sampleCount": 7,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupDepthMargin": {
+              "selected": 8.6,
+              "p10": 56.47921521101118,
+              "p50": 68.32630985689175,
+              "p90": 117.5165190062179,
+              "sampleCount": 7,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "maxHipSagDeg": {
+              "selected": 161.5,
+              "p10": 24.167099930458008,
+              "p50": 39.974600501035525,
+              "p90": 54.03914305459797,
+              "sampleCount": 7,
+              "selectionRule": "blend_straight_lower_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "maxHipPikeDeg": {
+              "selected": 198.5,
+              "p10": 24.167099930458008,
+              "p50": 39.974600501035525,
+              "p90": 54.03914305459797,
+              "sampleCount": 7,
+              "selectionRule": "blend_straight_upper_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "pushupHipSagOffset": {
+              "selected": -0.0615,
+              "p10": -0.49037473935739173,
+              "p50": -0.46365377955373105,
+              "p90": -0.42798646445378724,
+              "sampleCount": 6,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "pushupHipPikeOffset": {
+              "selected": 0.038000000000000006,
+              "p10": -0.49037473935739173,
+              "p50": -0.46365377955373105,
+              "p90": -0.42798646445378724,
+              "sampleCount": 6,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "maxElbowFlareDeg": {
+              "selected": 77.4,
+              "p10": 139.58553847622,
+              "p50": 153.25328917021127,
+              "p90": 162.25830900785314,
+              "sampleCount": 6,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupElbowFlareDeg"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 7,
+            "errorSampleCount": 6,
+            "errorCounts": {
+              "pushupDepthNotEnough": 6
+            },
+            "sources": [
+              "QEVD/FIT-COACH+MediaPipe"
+            ]
+          }
+        }
+      },
+      "side": {
+        "default": {
+          "metrics": {
+            "pushupDownAngle": {
+              "selected": 91.11664237031539,
+              "p10": 83.93958642367706,
+              "p50": 94.34994478910534,
+              "p90": 156.2902894817981,
+              "sampleCount": 4,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupUpAngle": {
+              "selected": 158.0,
+              "p10": 83.93958642367706,
+              "p50": 94.34994478910534,
+              "p90": 156.2902894817981,
+              "sampleCount": 4,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupDepthMargin": {
+              "selected": 9.2,
+              "p10": 83.93958642367706,
+              "p50": 94.34994478910534,
+              "p90": 156.2902894817981,
+              "sampleCount": 4,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "maxHipSagDeg": {
+              "selected": 165.0,
+              "p10": 3.909802771366424,
+              "p50": 6.645148889273386,
+              "p90": 7.501815854618343,
+              "sampleCount": 4,
+              "selectionRule": "blend_straight_lower_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "maxHipPikeDeg": {
+              "selected": 195.0,
+              "p10": 3.909802771366424,
+              "p50": 6.645148889273386,
+              "p90": 7.501815854618343,
+              "sampleCount": 4,
+              "selectionRule": "blend_straight_upper_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "pushupHipSagOffset": {
+              "selected": -0.056,
+              "p10": -0.3860486499467474,
+              "p50": -0.38312460642170576,
+              "p90": -0.3474486229129098,
+              "sampleCount": 4,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "pushupHipPikeOffset": {
+              "selected": 0.042,
+              "p10": -0.3860486499467474,
+              "p50": -0.38312460642170576,
+              "p90": -0.3474486229129098,
+              "sampleCount": 4,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "maxElbowFlareDeg": {
+              "selected": 72.9,
+              "p10": 153.43495526869486,
+              "p50": 153.43495526869486,
+              "p90": 153.43495526869486,
+              "sampleCount": 1,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupElbowFlareDeg"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 4,
+            "errorSampleCount": 0,
+            "errorCounts": {},
+            "sources": [
+              "QEVD/FIT-COACH+MediaPipe",
+              "data/dataset/fitness_dataset.jsonl"
+            ]
+          }
+        },
+        "medium": {
+          "metrics": {
+            "pushupDownAngle": {
+              "selected": 91.86081025179962,
+              "p10": 178.66775231153193,
+              "p50": 178.66775231153193,
+              "p90": 178.66775231153193,
+              "sampleCount": 1,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupUpAngle": {
+              "selected": 158.6,
+              "p10": 178.66775231153193,
+              "p50": 178.66775231153193,
+              "p90": 178.66775231153193,
+              "sampleCount": 1,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupDepthMargin": {
+              "selected": 9.04,
+              "p10": 178.66775231153193,
+              "p50": 178.66775231153193,
+              "p90": 178.66775231153193,
+              "sampleCount": 1,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "maxHipSagDeg": {
+              "selected": 165.0,
+              "p10": 2.85720064949507,
+              "p50": 2.85720064949507,
+              "p90": 2.85720064949507,
+              "sampleCount": 1,
+              "selectionRule": "blend_straight_lower_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "maxHipPikeDeg": {
+              "selected": 195.0,
+              "p10": 2.85720064949507,
+              "p50": 2.85720064949507,
+              "p90": 2.85720064949507,
+              "sampleCount": 1,
+              "selectionRule": "blend_straight_upper_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "pushupHipSagOffset": {
+              "selected": -0.0582,
+              "p10": -0.3333333981481306,
+              "p50": -0.3333333981481306,
+              "p90": -0.3333333981481306,
+              "sampleCount": 1,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "pushupHipPikeOffset": {
+              "selected": 0.040400000000000005,
+              "p10": -0.3333333981481306,
+              "p50": -0.3333333981481306,
+              "p90": -0.3333333981481306,
+              "sampleCount": 1,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "maxElbowFlareDeg": {
+              "selected": 73.75500000000001,
+              "p10": 153.43495526869486,
+              "p50": 153.43495526869486,
+              "p90": 153.43495526869486,
+              "sampleCount": 1,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupElbowFlareDeg"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 1,
+            "errorSampleCount": 0,
+            "errorCounts": {},
+            "sources": [
+              "data/dataset/fitness_dataset.jsonl"
+            ]
+          }
+        }
+      },
+      "oblique": {
+        "default": {
+          "metrics": {
+            "pushupDownAngle": {
+              "selected": 84.0,
+              "p10": 42.86590707660574,
+              "p50": 137.10949232814335,
+              "p90": 156.27953417605246,
+              "sampleCount": 104,
+              "selectionRule": "blend_lower_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupUpAngle": {
+              "selected": 150.0,
+              "p10": 42.86590707660574,
+              "p50": 137.10949232814335,
+              "p90": 156.27953417605246,
+              "sampleCount": 104,
+              "selectionRule": "blend_upper_transition",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "pushupDepthMargin": {
+              "selected": 16.0,
+              "p10": 42.86590707660574,
+              "p50": 137.10949232814335,
+              "p90": 156.27953417605246,
+              "sampleCount": 104,
+              "selectionRule": "blend_spread_margin",
+              "sourceMetric": "pushupElbowAngle"
+            },
+            "maxHipSagDeg": {
+              "selected": 161.17312058437116,
+              "p10": 6.650203109187192,
+              "p50": 11.516133936738413,
+              "p90": 18.826879415628827,
+              "sampleCount": 104,
+              "selectionRule": "blend_straight_lower_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "maxHipPikeDeg": {
+              "selected": 198.82687941562884,
+              "p10": 6.650203109187192,
+              "p50": 11.516133936738413,
+              "p90": 18.826879415628827,
+              "sampleCount": 104,
+              "selectionRule": "blend_straight_upper_deviation",
+              "sourceMetric": "pushupBodyLineDeviation"
+            },
+            "pushupHipSagOffset": {
+              "selected": -0.1,
+              "p10": -0.4041284011664623,
+              "p50": -0.3839614109159001,
+              "p90": -0.36583151632068,
+              "sampleCount": 83,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "pushupHipPikeOffset": {
+              "selected": 0.010000000000000002,
+              "p10": -0.4041284011664623,
+              "p50": -0.3839614109159001,
+              "p90": -0.36583151632068,
+              "sampleCount": 83,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupHipOffset"
+            },
+            "maxElbowFlareDeg": {
+              "selected": 90.0,
+              "p10": 91.40116192902246,
+              "p50": 161.28686819769035,
+              "p90": 170.59604156757726,
+              "sampleCount": 102,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "pushupElbowFlareDeg"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 104,
+            "errorSampleCount": 6,
+            "errorCounts": {
+              "pushupDepthNotEnough": 6
+            },
+            "sources": [
+              "QEVD/FIT-COACH+MediaPipe"
+            ]
+          }
+        }
+      }
+    },
+    "plank": {
+      "front": {
+        "default": {
+          "metrics": {
+            "plankNeutralMin": {
+              "selected": 168.0,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "plankNeutralMax": {
+              "selected": 192.0,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "plankHipSagOffset": {
+              "selected": -0.035,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "plankHipPikeOffset": {
+              "selected": 0.04,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "maxNeckAngle": {
+              "selected": 145.0,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            }
+          },
+          "metadata": {
+            "fallbackOnly": true
+          }
+        }
+      },
+      "side": {
+        "default": {
+          "metrics": {
+            "plankNeutralMin": {
+              "selected": 168.0,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "plankNeutralMax": {
+              "selected": 192.0,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "plankHipSagOffset": {
+              "selected": -0.035,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "plankHipPikeOffset": {
+              "selected": 0.04,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            },
+            "maxNeckAngle": {
+              "selected": 145.0,
+              "sampleCount": 0,
+              "selectionRule": "fallback_default"
+            }
+          },
+          "metadata": {
+            "fallbackOnly": true
+          }
+        }
+      },
+      "oblique": {
+        "default": {
+          "metrics": {
+            "plankNeutralMin": {
+              "selected": 161.0955886706153,
+              "p10": 6.72574329499179,
+              "p50": 12.223977981461587,
+              "p90": 19.671568143760766,
+              "sampleCount": 18,
+              "selectionRule": "blend_straight_lower_deviation",
+              "sourceMetric": "plankBodyLineDeviation"
+            },
+            "plankNeutralMax": {
+              "selected": 198.9044113293847,
+              "p10": 6.72574329499179,
+              "p50": 12.223977981461587,
+              "p90": 19.671568143760766,
+              "sampleCount": 18,
+              "selectionRule": "blend_straight_upper_deviation",
+              "sourceMetric": "plankBodyLineDeviation"
+            },
+            "plankHipSagOffset": {
+              "selected": -0.0935,
+              "p10": -0.44407018451532826,
+              "p50": -0.3836025026847373,
+              "p90": -0.3639953876157463,
+              "sampleCount": 18,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "plankHipOffset"
+            },
+            "plankHipPikeOffset": {
+              "selected": 0.013000000000000001,
+              "p10": -0.44407018451532826,
+              "p50": -0.3836025026847373,
+              "p90": -0.3639953876157463,
+              "sampleCount": 18,
+              "selectionRule": "blend_p90_upper_bound",
+              "sourceMetric": "plankHipOffset"
+            },
+            "maxNeckAngle": {
+              "selected": 167.03598985879773,
+              "p10": 169.48443317644194,
+              "p50": 174.2932687671203,
+              "p90": 176.92622979241713,
+              "sampleCount": 18,
+              "selectionRule": "blend_p10_lower_bound",
+              "sourceMetric": "plankNeckAngle"
+            }
+          },
+          "metadata": {
+            "standardSampleCount": 18,
+            "errorSampleCount": 0,
+            "errorCounts": {},
+            "sources": [
+              "QEVD/FIT-COACH+MediaPipe"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

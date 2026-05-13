@@ -1,0 +1,36 @@
+name: fitness_pose_app
+description: 交互式健身动作矫正教练 APP（Android）
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  camera: ^0.10.0+4
+  permission_handler: ^11.3.0
+  google_mlkit_pose_detection: ^0.13.0
+  tflite_flutter: ^0.12.1
+  image: ^4.0.17
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.5
+  uuid: ^4.5.1
+  cupertino_icons: ^1.0.2
+  audioplayers: ^6.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.13.1
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/models/movenet_lightning.tflite
+    - assets/threshold_profile.json
+    - assets/audio/

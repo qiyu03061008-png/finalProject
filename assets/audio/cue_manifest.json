@@ -1,0 +1,86 @@
+[
+  {
+    "key": "squat_depth_not_enough",
+    "category": "issue",
+    "exercise": "squat",
+    "text": "再蹲低一点"
+  },
+  {
+    "key": "torso_lean_forward",
+    "category": "issue",
+    "exercise": "squat",
+    "text": "躯干不要前倾太多"
+  },
+  {
+    "key": "knees_caving_in",
+    "category": "issue",
+    "exercise": "squat",
+    "text": "膝盖不要内扣"
+  },
+  {
+    "key": "knees_too_far_forward",
+    "category": "issue",
+    "exercise": "squat",
+    "text": "膝盖不要超过脚尖太多"
+  },
+  {
+    "key": "pushup_depth_not_enough",
+    "category": "issue",
+    "exercise": "pushup",
+    "text": "再下去一点"
+  },
+  {
+    "key": "hip_sag",
+    "category": "issue",
+    "exercise": "pushup",
+    "text": "收紧核心，不要塌腰"
+  },
+  {
+    "key": "hip_too_high",
+    "category": "issue",
+    "exercise": "pushup",
+    "text": "臀部不要抬太高"
+  },
+  {
+    "key": "elbows_flared",
+    "category": "issue",
+    "exercise": "pushup",
+    "text": "手肘不要外翻太多"
+  },
+  {
+    "key": "plank_hip_sag",
+    "category": "issue",
+    "exercise": "plank",
+    "text": "收紧核心，不要塌腰"
+  },
+  {
+    "key": "plank_hip_too_high",
+    "category": "issue",
+    "exercise": "plank",
+    "text": "臀部不要抬太高"
+  },
+  {
+    "key": "neck_not_neutral",
+    "category": "issue",
+    "exercise": "plank",
+    "text": "颈部放松，目视下方"
+  },
+  {
+    "key": "squat_keep_steady",
+    "category": "steady",
+    "exercise": "squat",
+    "text": "动作不错，继续保持"
+  },
+  {
+    "key": "pushup_keep_steady",
+    "category": "steady",
+    "exercise": "pushup",
+    "text": "节奏很好，继续保持"
+  },
+  {
+    "key": "plank_keep_steady",
+    "category": "steady",
+    "exercise": "plank",
+    "text": "姿势稳定，继续保持"
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "generatedAtIso": "2026-04-30T20:41:10.707639",
+  "inputFileCount": 2,
+  "totalInputLines": 6,
+  "invalidJsonLines": 0,
+  "mergedDuplicates": 3,
+  "outputSampleCount": 3,
+  "inputFiles": [
+    "data/dataset/fitness_dataset.jsonl",
+    "data/dataset\\fitness_dataset.jsonl"
+  ],
+  "exerciseCounts": {
+    "squat": 2,
+    "pushup": 1
+  },
+  "viewCounts": {
+    "front": 2,
+    "side": 1
+  },
+  "qualityCounts": {
+    "standard": 3
+  },
+  "subjectCount": 1
+}
