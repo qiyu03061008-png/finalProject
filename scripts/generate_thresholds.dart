@@ -286,21 +286,21 @@ class _BucketAccumulator {
           sourceMetric: 'squatTorsoLeanDeg',
           fallbackMetric: fallbackMetric,
           minValue: 12,
-          maxValue: 30,
+          maxValue: 22,
         );
-      case 'maxKneeInwardRatio':
+      case 'maxKneeValgusAngleDeg':
         return _buildLowerBound(
-          sourceMetric: 'squatKneeInwardRatio',
+          sourceMetric: 'squatKneeValgusAngle',
           fallbackMetric: fallbackMetric,
-          minValue: 0.70,
-          maxValue: 0.95,
+          minValue: 162,
+          maxValue: 172,
         );
-      case 'maxKneeOverToe':
+      case 'maxShankLeanDeg':
         return _buildUpperBound(
-          sourceMetric: 'squatKneeOverToe',
+          sourceMetric: 'squatShankLeanDeg',
           fallbackMetric: fallbackMetric,
-          minValue: 0.18,
-          maxValue: 0.45,
+          minValue: 22,
+          maxValue: 32,
         );
       case 'pushupDownAngle':
         return _buildLowerTransition(
@@ -323,7 +323,7 @@ class _BucketAccumulator {
           sourceMetric: 'pushupElbowAngle',
           fallbackMetric: fallbackMetric,
           minValue: 6,
-          maxValue: 16,
+          maxValue: 12,
           scale: 0.25,
         );
       case 'maxHipSagDeg':
@@ -361,7 +361,7 @@ class _BucketAccumulator {
           sourceMetric: 'pushupElbowFlareDeg',
           fallbackMetric: fallbackMetric,
           minValue: 45,
-          maxValue: 90,
+          maxValue: 78,
         );
       case 'plankNeutralMin':
         return _buildAngleAroundStraight(
@@ -397,8 +397,8 @@ class _BucketAccumulator {
         return _buildLowerBound(
           sourceMetric: 'plankNeckAngle',
           fallbackMetric: fallbackMetric,
-          minValue: 120,
-          maxValue: 170,
+          minValue: 140,
+          maxValue: 155,
         );
       default:
         return ThresholdMetricProfile(

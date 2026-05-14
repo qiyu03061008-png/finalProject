@@ -91,6 +91,8 @@ class PersonalizedThresholds {
     required this.squatUpAngle,
     required this.shallowSquatMargin,
     required this.maxTorsoLeanDeg,
+    required this.maxKneeValgusAngleDeg,
+    required this.maxShankLeanDeg,
     required this.maxKneeInwardRatio,
     required this.maxKneeOverToe,
     required this.pushupDownAngle,
@@ -113,6 +115,8 @@ class PersonalizedThresholds {
   final double squatUpAngle;
   final double shallowSquatMargin;
   final double maxTorsoLeanDeg;
+  final double maxKneeValgusAngleDeg;
+  final double maxShankLeanDeg;
   final double maxKneeInwardRatio;
   final double maxKneeOverToe;
   final double pushupDownAngle;
@@ -176,6 +180,16 @@ class PersonalizedThresholds {
         _metricValue(squatThresholds, 'maxKneeInwardRatio', 0.84);
     final baseMaxKneeOverToe =
         _metricValue(squatThresholds, 'maxKneeOverToe', 0.32);
+    final baseMaxKneeValgusAngleDeg = _metricValue(
+      squatThresholds,
+      'maxKneeValgusAngleDeg',
+      _legacyKneeValgusAngleFallback(baseMaxKneeInwardRatio),
+    );
+    final baseMaxShankLeanDeg = _metricValue(
+      squatThresholds,
+      'maxShankLeanDeg',
+      _legacyShankLeanAngleFallback(baseMaxKneeOverToe),
+    );
 
     final basePushupDownAngle =
         _metricValue(pushupThresholds, 'pushupDownAngle', 92);
@@ -225,6 +239,16 @@ class PersonalizedThresholds {
         baseMaxTorsoLeanDeg + legOffset * 1.1,
         12,
         30,
+      ),
+      maxKneeValgusAngleDeg: _clampDouble(
+        baseMaxKneeValgusAngleDeg + shoulderOffset * 1.5,
+        156,
+        175,
+      ),
+      maxShankLeanDeg: _clampDouble(
+        baseMaxShankLeanDeg - legOffset * 2.0,
+        22,
+        40,
       ),
       maxKneeInwardRatio: _clampDouble(
         baseMaxKneeInwardRatio + (1.25 - profile.shoulderToHipRatio) * 0.12,
@@ -315,6 +339,17 @@ class PersonalizedThresholds {
         return 'front';
     }
   }
+}
+
+double _legacyKneeValgusAngleFallback(double legacyRatio) {
+  final normalized = ((legacyRatio - 0.76) / (0.92 - 0.76)).clamp(0.0, 1.0);
+  return 160 + normalized * 10;
+}
+
+double _legacyShankLeanAngleFallback(double legacyKneeOverToe) {
+  final normalized = ((legacyKneeOverToe - 0.20) / (0.42 - 0.20))
+      .clamp(0.0, 1.0);
+  return 24 + normalized * 10;
 }
 
 double _metricValue(Map<String, double> values, String key, double fallback) {

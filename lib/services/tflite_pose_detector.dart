@@ -22,8 +22,8 @@ class TFLitePoseDetector {
   Object? _inputBuffer;
   Object? _outputBuffer;
 
-  static const double _minReliableScore = 0.36;
-  static const double _minTorsoScore = 0.40;
+  static const double _minReliableScore = 0.26;
+  static const double _minTorsoScore = 0.30;
 
   static const Map<int, PoseLandmarkType> _movenetIndexMap =
       <int, PoseLandmarkType>{
@@ -92,14 +92,20 @@ class TFLitePoseDetector {
 ) async {
   if (!isReady) return null;
 
-  final prep = _cameraImageToLetterboxInput(
+  final rgbPrep = _cameraImageToRgbLetterboxInput(
     cameraImage,
     camera.sensorOrientation,
   );
-  if (prep == null) return null;
+  final effectivePrep =
+      rgbPrep ??
+      _cameraImageToLetterboxInput(
+        cameraImage,
+        camera.sensorOrientation,
+      );
+  if (effectivePrep == null) return null;
 
   return _detectPreparedInput(
-    prep,
+    effectivePrep,
     source: 'movenet_camera_fast',
     timestamp: DateTime.now(),
   );
@@ -364,6 +370,133 @@ _LetterboxPrep? _cameraImageToLetterboxInput(
     uprightWidth,
     uprightHeight,
   );
+}
+
+_LetterboxPrep? _cameraImageToRgbLetterboxInput(
+  CameraImage image,
+  int sensorOrientation,
+) {
+  if (image.planes.isEmpty) return null;
+
+  if (image.format.group == ImageFormatGroup.yuv420 ||
+      image.planes.length >= 3) {
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+    final yBytes = yPlane.bytes;
+    final uBytes = uPlane.bytes;
+    final vBytes = vPlane.bytes;
+
+    final yRowStride = yPlane.bytesPerRow;
+    final yPixelStride = yPlane.bytesPerPixel ?? 1;
+    final uRowStride = uPlane.bytesPerRow;
+    final uPixelStride = uPlane.bytesPerPixel ?? 1;
+    final vRowStride = vPlane.bytesPerRow;
+    final vPixelStride = vPlane.bytesPerPixel ?? 1;
+
+    final srcWidth = image.width;
+    final srcHeight = image.height;
+    final rotation = ((sensorOrientation % 360) + 360) % 360;
+    final rotated = rotation == 90 || rotation == 270;
+    final uprightWidth = rotated ? srcHeight : srcWidth;
+    final uprightHeight = rotated ? srcWidth : srcHeight;
+
+    final scale = math.min(
+      _inputWidth / uprightWidth,
+      _inputHeight / uprightHeight,
+    );
+    final resizedWidth = math.max(1, (uprightWidth * scale).round());
+    final resizedHeight = math.max(1, (uprightHeight * scale).round());
+    final padX = (_inputWidth - resizedWidth) / 2.0;
+    final padY = (_inputHeight - resizedHeight) / 2.0;
+
+    final input = _inputBuffer ??= _createInputBuffer();
+    final frame = (input as List).first as List;
+
+    for (var y = 0; y < _inputHeight; y++) {
+      final row = frame[y] as List;
+      for (var x = 0; x < _inputWidth; x++) {
+        final pixel = row[x] as List;
+        final insideImage = x >= padX &&
+            x < padX + resizedWidth &&
+            y >= padY &&
+            y < padY + resizedHeight;
+
+        var r = 0;
+        var g = 0;
+        var b = 0;
+
+        if (insideImage) {
+          final uprightX = ((x - padX) / scale)
+              .clamp(0.0, uprightWidth - 1.0)
+              .round();
+          final uprightY = ((y - padY) / scale)
+              .clamp(0.0, uprightHeight - 1.0)
+              .round();
+
+          final sourcePoint = _uprightToSourcePoint(
+            uprightX,
+            uprightY,
+            srcWidth,
+            srcHeight,
+            rotation,
+          );
+
+          final sourceX = sourcePoint.x.clamp(0, srcWidth - 1).toInt();
+          final sourceY = sourcePoint.y.clamp(0, srcHeight - 1).toInt();
+          final uvX = sourceX ~/ 2;
+          final uvY = sourceY ~/ 2;
+
+          final yIndex = sourceY * yRowStride + sourceX * yPixelStride;
+          final uIndex = uvY * uRowStride + uvX * uPixelStride;
+          final vIndex = uvY * vRowStride + uvX * vPixelStride;
+
+          if (yIndex >= 0 &&
+              yIndex < yBytes.length &&
+              uIndex >= 0 &&
+              uIndex < uBytes.length &&
+              vIndex >= 0 &&
+              vIndex < vBytes.length) {
+            final yp = yBytes[yIndex].toDouble();
+            final up = uBytes[uIndex].toDouble();
+            final vp = vBytes[vIndex].toDouble();
+            r = (yp + 1.402 * (vp - 128)).round().clamp(0, 255).toInt();
+            g =
+                (yp - 0.344136 * (up - 128) - 0.714136 * (vp - 128))
+                    .round()
+                    .clamp(0, 255)
+                    .toInt();
+            b = (yp + 1.772 * (up - 128)).round().clamp(0, 255).toInt();
+          }
+        }
+
+        if (_inputType == tflite.TensorType.uint8) {
+          pixel[0] = r;
+          pixel[1] = g;
+          pixel[2] = b;
+        } else {
+          pixel[0] = r / 255.0;
+          pixel[1] = g / 255.0;
+          pixel[2] = b / 255.0;
+        }
+      }
+    }
+
+    return _LetterboxPrep(
+      input,
+      scale,
+      padX,
+      padY,
+      uprightWidth,
+      uprightHeight,
+    );
+  }
+
+  final raw = _cameraImageToRgb(image);
+  if (raw == null) return null;
+
+  final upright = _rotateToDisplayOrientation(raw, sensorOrientation);
+  return _letterboxToInput(upright);
 }
 
 math.Point<int> _uprightToSourcePoint(
@@ -698,13 +831,13 @@ math.Point<int> _uprightToSourcePoint(
       PoseLandmarkType.rightAnkle,
     ].where(reliable).length;
 
-    if (lowerBodyReliableCount < 4) return false;
+    if (lowerBodyReliableCount < 3) return false;
 
     final totalReliableCount = mapped.values
         .where((p) => p.likelihood >= _minReliableScore)
         .length;
 
-    if (totalReliableCount < 8) return false;
+    if (totalReliableCount < 6) return false;
 
     final leftShoulder = mapped[PoseLandmarkType.leftShoulder];
     final rightShoulder = mapped[PoseLandmarkType.rightShoulder];
@@ -722,12 +855,12 @@ math.Point<int> _uprightToSourcePoint(
     final hipMidY = (leftHip.y + rightHip.y) / 2;
     final torsoHeight = (hipMidY - shoulderMidY).abs();
 
-    if (torsoHeight < 24) return false;
+    if (torsoHeight < 18) return false;
 
     final shoulderWidth = (leftShoulder.x - rightShoulder.x).abs();
     final hipWidth = (leftHip.x - rightHip.x).abs();
 
-    if (shoulderWidth < 8 && hipWidth < 8) return false;
+    if (shoulderWidth < 6 && hipWidth < 6) return false;
 
     return true;
   }

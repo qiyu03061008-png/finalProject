@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAtIso": "2026-05-03T20:25:13.846081",
+  "generatedAtIso": "2026-05-14T18:41:38.921853",
   "exercises": {
     "squat": {
       "front": {
@@ -34,31 +34,31 @@
               "sourceMetric": "squatKneeAngle"
             },
             "maxTorsoLeanDeg": {
-              "selected": 12.0,
-              "p10": 0.0,
-              "p50": 0.0,
-              "p90": 0.0,
+              "selected": 22.0,
+              "p10": 14.480350818491475,
+              "p50": 52.49071307229681,
+              "p90": 93.85889601130134,
               "sampleCount": 234,
               "selectionRule": "blend_p90_upper_bound",
               "sourceMetric": "squatTorsoLeanDeg"
             },
-            "maxKneeInwardRatio": {
-              "selected": 0.7730566942577787,
-              "p10": 0.7730566942577787,
-              "p50": 1.1470940730425647,
-              "p90": 2.0147628625646865,
+            "maxKneeValgusAngleDeg": {
+              "selected": 164.0,
+              "p10": 8.282991412007043,
+              "p50": 85.22995361885518,
+              "p90": 167.75343175550827,
               "sampleCount": 209,
               "selectionRule": "blend_p10_lower_bound",
-              "sourceMetric": "squatKneeInwardRatio"
+              "sourceMetric": "squatKneeValgusAngle"
             },
-            "maxKneeOverToe": {
-              "selected": 0.36,
-              "p10": 0.05770806727596242,
-              "p50": 0.7881649825081203,
-              "p90": 1.2316102692445614,
-              "sampleCount": 207,
+            "maxShankLeanDeg": {
+              "selected": 30.0,
+              "p10": 4.759571650203012,
+              "p50": 26.387493091722828,
+              "p90": 68.32427290044726,
+              "sampleCount": 209,
               "selectionRule": "blend_p90_upper_bound",
-              "sourceMetric": "squatKneeOverToe"
+              "sourceMetric": "squatShankLeanDeg"
             }
           },
           "metadata": {
@@ -103,31 +103,31 @@
               "sourceMetric": "squatKneeAngle"
             },
             "maxTorsoLeanDeg": {
-              "selected": 12.0,
-              "p10": 0.0,
-              "p50": 0.0,
-              "p90": 0.0,
+              "selected": 22.0,
+              "p10": 0.006434285004905642,
+              "p50": 0.006434285004905642,
+              "p90": 0.006434285004905642,
               "sampleCount": 2,
               "selectionRule": "blend_p90_upper_bound",
               "sourceMetric": "squatTorsoLeanDeg"
             },
-            "maxKneeInwardRatio": {
-              "selected": 0.7828881216061944,
-              "p10": 0.8713709677419355,
-              "p50": 0.872983870967742,
-              "p90": 0.8745967741935484,
+            "maxKneeValgusAngleDeg": {
+              "selected": 164.0,
+              "p10": 180.0,
+              "p50": 180.0,
+              "p90": 180.0,
               "sampleCount": 2,
               "selectionRule": "blend_p10_lower_bound",
-              "sourceMetric": "squatKneeInwardRatio"
+              "sourceMetric": "squatKneeValgusAngle"
             },
-            "maxKneeOverToe": {
-              "selected": 0.34,
-              "p10": 0.0001711229844224143,
-              "p50": 0.0001711229844224143,
-              "p90": 0.0001711229844224143,
+            "maxShankLeanDeg": {
+              "selected": 30.0,
+              "p10": 0.006434285004905642,
+              "p50": 0.006434285004905642,
+              "p90": 0.006434285004905642,
               "sampleCount": 2,
               "selectionRule": "blend_p90_upper_bound",
-              "sourceMetric": "squatKneeOverToe"
+              "sourceMetric": "squatShankLeanDeg"
             }
           },
           "metadata": {
@@ -171,31 +171,31 @@
               "sourceMetric": "squatKneeAngle"
             },
             "maxTorsoLeanDeg": {
-              "selected": 16.4,
-              "p10": 0.0,
-              "p50": 0.22870058008947816,
-              "p90": 5.230965581224188,
+              "selected": 18.0,
+              "p10": 0.22539205418905958,
+              "p50": 2.3885153037599163,
+              "p90": 12.912001554927311,
               "sampleCount": 9,
               "selectionRule": "blend_p90_upper_bound",
               "sourceMetric": "squatTorsoLeanDeg"
             },
-            "maxKneeInwardRatio": {
-              "selected": 0.7839999999999999,
-              "p10": 0.4989767280275981,
-              "p50": 0.7471400532971918,
-              "p90": 2.052645270469383,
+            "maxKneeValgusAngleDeg": {
+              "selected": 164.0,
+              "p10": 75.6978344594907,
+              "p50": 176.00451011754637,
+              "p90": 178.49142532210158,
               "sampleCount": 8,
               "selectionRule": "blend_p10_lower_bound",
-              "sourceMetric": "squatKneeInwardRatio"
+              "sourceMetric": "squatKneeValgusAngle"
             },
-            "maxKneeOverToe": {
-              "selected": 0.341959270952323,
-              "p10": 0.062306998822449985,
-              "p50": 0.20446334660422516,
-              "p90": 0.3748981773808075,
+            "maxShankLeanDeg": {
+              "selected": 28.0,
+              "p10": 5.813982886257297,
+              "p50": 14.728563783745084,
+              "p90": 18.69693178972406,
               "sampleCount": 8,
               "selectionRule": "blend_p90_upper_bound",
-              "sourceMetric": "squatKneeOverToe"
+              "sourceMetric": "squatShankLeanDeg"
             }
           },
           "metadata": {
@@ -241,31 +241,31 @@
               "sourceMetric": "squatKneeAngle"
             },
             "maxTorsoLeanDeg": {
-              "selected": 13.088456695470747,
-              "p10": 0.0,
-              "p50": 2.738801061575404,
-              "p90": 13.088456695470747,
+              "selected": 18.0,
+              "p10": 1.1454855349030395,
+              "p50": 7.360367339393057,
+              "p90": 17.687246772427038,
               "sampleCount": 677,
               "selectionRule": "blend_p90_upper_bound",
               "sourceMetric": "squatTorsoLeanDeg"
             },
-            "maxKneeInwardRatio": {
-              "selected": 0.7,
-              "p10": 0.6975892799474064,
-              "p50": 0.8807340027165675,
-              "p90": 1.418235790419006,
+            "maxKneeValgusAngleDeg": {
+              "selected": 163.0,
+              "p10": 159.05811015091967,
+              "p50": 175.0103641208339,
+              "p90": 178.32947096630357,
               "sampleCount": 677,
               "selectionRule": "blend_p10_lower_bound",
-              "sourceMetric": "squatKneeInwardRatio"
+              "sourceMetric": "squatKneeValgusAngle"
             },
-            "maxKneeOverToe": {
-              "selected": 0.3594949289571496,
-              "p10": 0.0,
-              "p50": 0.1010407124826985,
-              "p90": 0.3594949289571496,
+            "maxShankLeanDeg": {
+              "selected": 24.0,
+              "p10": 3.3009740337375337,
+              "p50": 11.440864693486137,
+              "p90": 22.091054286097037,
               "sampleCount": 677,
               "selectionRule": "blend_p90_upper_bound",
-              "sourceMetric": "squatKneeOverToe"
+              "sourceMetric": "squatShankLeanDeg"
             }
           },
           "metadata": {
@@ -349,7 +349,7 @@
               "sourceMetric": "pushupHipOffset"
             },
             "maxElbowFlareDeg": {
-              "selected": 77.4,
+              "selected": 70.0,
               "p10": 139.58553847622,
               "p50": 153.25328917021127,
               "p90": 162.25830900785314,
@@ -437,7 +437,7 @@
               "sourceMetric": "pushupHipOffset"
             },
             "maxElbowFlareDeg": {
-              "selected": 72.9,
+              "selected": 70.0,
               "p10": 153.43495526869486,
               "p50": 153.43495526869486,
               "p90": 153.43495526869486,
@@ -522,7 +522,7 @@
               "sourceMetric": "pushupHipOffset"
             },
             "maxElbowFlareDeg": {
-              "selected": 73.75500000000001,
+              "selected": 70.0,
               "p10": 153.43495526869486,
               "p50": 153.43495526869486,
               "p90": 153.43495526869486,
@@ -545,7 +545,7 @@
         "default": {
           "metrics": {
             "pushupDownAngle": {
-              "selected": 84.0,
+              "selected": 88.0,
               "p10": 42.86590707660574,
               "p50": 137.10949232814335,
               "p90": 156.27953417605246,
@@ -554,7 +554,7 @@
               "sourceMetric": "pushupElbowAngle"
             },
             "pushupUpAngle": {
-              "selected": 150.0,
+              "selected": 156.0,
               "p10": 42.86590707660574,
               "p50": 137.10949232814335,
               "p90": 156.27953417605246,
@@ -563,7 +563,7 @@
               "sourceMetric": "pushupElbowAngle"
             },
             "pushupDepthMargin": {
-              "selected": 11.0,
+              "selected": 10.0,
               "p10": 42.86590707660574,
               "p50": 137.10949232814335,
               "p90": 156.27953417605246,
@@ -608,7 +608,7 @@
               "sourceMetric": "pushupHipOffset"
             },
             "maxElbowFlareDeg": {
-              "selected": 76.0,
+              "selected": 72.0,
               "p10": 91.40116192902246,
               "p50": 161.28686819769035,
               "p90": 170.59604156757726,
@@ -739,7 +739,7 @@
               "sourceMetric": "plankHipOffset"
             },
             "maxNeckAngle": {
-              "selected": 167.03598985879773,
+              "selected": 150.0,
               "p10": 169.48443317644194,
               "p50": 174.2932687671203,
               "p90": 176.92622979241713,

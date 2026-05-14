@@ -14,8 +14,8 @@ class PosePainter extends CustomPainter {
   final Size imageSize;
   final Size canvasSize;
   final bool mirrorX;
-  static const double _minDrawLikelihood = 0.32;
-  static const double _highConfidenceLikelihood = 0.7;
+  static const double _minDrawLikelihood = 0.26;
+  static const double _highConfidenceLikelihood = 0.62;
 
   static final List<List<PoseLandmarkType>> _connections = <List<PoseLandmarkType>>[
     <PoseLandmarkType>[PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder],
@@ -67,7 +67,6 @@ class PosePainter extends CustomPainter {
 
     final start = _toCanvasOffset(Offset(p1.x, p1.y));
     final end = _toCanvasOffset(Offset(p2.x, p2.y));
-
     canvas.drawLine(start, end, shadowPaint);
     canvas.drawLine(start, end, bonePaint);
   }

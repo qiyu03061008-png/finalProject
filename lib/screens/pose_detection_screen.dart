@@ -72,6 +72,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   int _droppedPrimaryFrames = 0;
   DateTime _lastInferenceAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastUiPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastMoveNetAnalysisAt = DateTime.fromMillisecondsSinceEpoch(0);
 
 // 推理不要追求每帧都做，先保证相机预览不卡
   static const int _blazePoseTargetIntervalMs = 95; // 约10FPS
@@ -339,7 +340,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
     final now = DateTime.now();
     final targetIntervalMs =
-    _useMoveNet ? _moveNetTargetIntervalMs : _blazePoseTargetIntervalMs;
+        _useMoveNet ? 140 : _blazePoseTargetIntervalMs;
 
     if (now.difference(_lastInferenceAt).inMilliseconds < targetIntervalMs) {
       return;
@@ -364,13 +365,11 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
         _noPoseFrameCount += 1;
         final canHoldLastPose = _lastStablePose != null &&
             _lastPoseSeenAt != null &&
-            DateTime.now().difference(_lastPoseSeenAt!).inMilliseconds <=
-                _keepPoseAliveMs;
-        if (_noPoseFrameCount >= 1 && !canHoldLastPose && mounted) {
+            DateTime.now().difference(_lastPoseSeenAt!).inMilliseconds <= 360;
+        if (_noPoseFrameCount >= 2 && !canHoldLastPose && mounted) {
           _currentPose = null;
           _analysis = null;
-          _actionRecognitionArmed = false;
-          _uprightStableFrames = 0;
+          _resetRecognitionGate();
           _lastSmoothedMoveNetPose = null;
           _lastSmoothedBlazePose = null;
           _publishLiveState(pose: null, analysis: null);
@@ -389,29 +388,51 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       );
 
       final fused = displayPose;
+      _lastStablePose = displayPose;
+      _lastPoseSeenAt = DateTime.now();
 
-// 先确认用户站好了，才开始分析动作
+      final hasReliablePose = _hasReliableAnalysisPose(fused);
+      if (!hasReliablePose) {
+        _resetRecognitionGate();
+        _analysis = null;
+        if (!mounted || sessionId != _cameraSession) return;
+        _currentPose = displayPose;
+        _publishLiveState(pose: displayPose, analysis: null);
+        return;
+      }
+
       if (!_actionRecognitionArmed) {
-        final uprightReady = _isUprightReadyPose(fused);
-        _uprightStableFrames = uprightReady ? _uprightStableFrames + 1 : 0;
+        if (_isUprightReadyPose(fused)) {
+          _uprightStableFrames += 1;
+        } else {
+          _uprightStableFrames = 0;
+        }
+
         if (_uprightStableFrames < _uprightRequiredStableFrames) {
-          if (!mounted || sessionId != _cameraSession) return;
-          _currentPose = null;
           _analysis = null;
-          _publishLiveState(pose: null, analysis: null);
+          if (!mounted || sessionId != _cameraSession) return;
+          _currentPose = displayPose;
+          _publishLiveState(pose: displayPose, analysis: null);
           return;
         }
+
         _actionRecognitionArmed = true;
+        _lastMoveNetAnalysisAt = DateTime.fromMillisecondsSinceEpoch(0);
         _analyzer.reset(widget.exerciseType);
       }
 
-      final analysis = _hasReliableAnalysisPose(fused)
+      final shouldAnalyzeMoveNet = !_useMoveNet ||
+          DateTime.now().difference(_lastMoveNetAnalysisAt).inMilliseconds >= 180;
+      final analysis = shouldAnalyzeMoveNet
           ? _analyzer.analyze(
               pose: fused,
               exerciseType: widget.exerciseType,
               profile: _profile,
             )
-          : null;
+          : _analysis;
+      if (_useMoveNet && shouldAnalyzeMoveNet) {
+        _lastMoveNetAnalysisAt = DateTime.now();
+      }
       _recordPerformance(stopwatch.elapsedMilliseconds.toDouble());
       if (analysis != null) {
         _maybeSpeakFeedback(analysis);
@@ -421,8 +442,6 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       );
 
       if (!mounted || sessionId != _cameraSession) return;
-      _lastStablePose = displayPose;
-      _lastPoseSeenAt = DateTime.now();
       _currentPose = displayPose;
       _analysis = analysis;
       _publishLiveState(pose: displayPose, analysis: analysis);
@@ -492,14 +511,19 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   }
 
   /// 同步当前姿态和分析结果，并顺手统计实时帧率。
+  void _resetRecognitionGate() {
+    _actionRecognitionArmed = false;
+    _uprightStableFrames = 0;
+    _lastMoveNetAnalysisAt = DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
   void _publishLiveState({
     required Pose? pose,
     required ExerciseAnalysisResult? analysis,
   }) {
     final now = DateTime.now();
 
-    final uiIntervalMs =
-    _useMoveNet ? _moveNetUiIntervalMs : _blazePoseUiIntervalMs;
+    final uiIntervalMs = _useMoveNet ? 95 : _blazePoseUiIntervalMs;
 
     if (pose != null &&
         now.difference(_lastUiPublishAt).inMilliseconds < uiIntervalMs) {
@@ -577,11 +601,11 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
 
   /// 对 MoveNet 输出做时序平滑，减少关键点抖动和跳点。
   Pose _smoothMoveNetPose(Pose pose) {
-    const lowConfidenceHold = 0.46;
-    const stillAlpha = 0.16;   // 静止时压抖
-    const moveAlpha = 0.58;    // 运动时快速跟随
-    const fastAlpha = 0.78;    // 大动作时更快跟随
-    const maxJumpRatio = 0.68;
+    const lowConfidenceHold = 0.40;
+    const stillAlpha = 0.12;   // 静止时更强抑抖
+    const moveAlpha = 0.54;    // 中速动作保留跟随
+    const fastAlpha = 0.80;    // 大动作仍然快速跟手
+    const maxJumpRatio = 0.88;
 
     final previous = _lastSmoothedMoveNetPose;
     if (previous == null) {
@@ -590,8 +614,8 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     }
 
     final torsoScale = _estimateTorsoScale(pose, previous);
-    final stillThreshold = torsoScale * 0.016;
-    final fastThreshold = torsoScale * 0.10;
+    final stillThreshold = torsoScale * 0.010;
+    final fastThreshold = torsoScale * 0.06;
     final maxJump = torsoScale * maxJumpRatio;
 
     final smoothed = <PoseLandmarkType, PoseLandmark>{};
@@ -604,7 +628,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
         if (previousPoint != null &&
             previousPoint.likelihood >= lowConfidenceHold) {
           smoothed[type] = previousPoint.copyWith(
-            likelihood: previousPoint.likelihood * 0.95,
+            likelihood: previousPoint.likelihood * 0.97,
           );
         }
         continue;
@@ -619,6 +643,8 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       final dy = currentPoint.y - previousPoint.y;
       final jump = math.sqrt(dx * dx + dy * dy);
       final response = _jointResponseMultiplier(type);
+      final microJitterThreshold =
+          torsoScale * (0.0045 + response * 0.0025);
       final jointStillThreshold = stillThreshold * (0.9 + response * 0.25);
       final jointFastThreshold = fastThreshold * (0.9 + response * 0.22);
       final jointMaxJump = maxJump * (0.82 + response * 0.28);
@@ -627,7 +653,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
           previousPoint.likelihood >= lowConfidenceHold) {
         smoothed[type] = previousPoint.copyWith(
           likelihood: math.max(
-            previousPoint.likelihood * 0.94,
+            previousPoint.likelihood * 0.97,
             currentPoint.likelihood,
           ),
         );
@@ -637,7 +663,21 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       if (jump > jointMaxJump &&
           previousPoint.likelihood >= currentPoint.likelihood * 0.9) {
         smoothed[type] = previousPoint.copyWith(
-          likelihood: previousPoint.likelihood * 0.93,
+          likelihood: previousPoint.likelihood * 0.95,
+        );
+        continue;
+      }
+
+      if (jump <= microJitterThreshold &&
+          currentPoint.likelihood <= previousPoint.likelihood + 0.10) {
+        smoothed[type] = PoseLandmark(
+          x: previousPoint.x * 0.92 + currentPoint.x * 0.08,
+          y: previousPoint.y * 0.92 + currentPoint.y * 0.08,
+          z: previousPoint.z * 0.92 + currentPoint.z * 0.08,
+          likelihood: math.max(
+            previousPoint.likelihood * 0.92,
+            currentPoint.likelihood,
+          ),
         );
         continue;
       }
@@ -656,10 +696,10 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
           ((currentPoint.likelihood - lowConfidenceHold) / (1 - lowConfidenceHold))
               .clamp(0.0, 1.0)
               .toDouble();
-      alpha = _lerpDouble(alpha, math.min(0.92, alpha + 0.18), confidenceBoost);
+      alpha = _lerpDouble(alpha, math.min(0.96, alpha + 0.24), confidenceBoost);
 
       if (currentPoint.likelihood > previousPoint.likelihood + 0.18) {
-        alpha = math.min(0.94, alpha + 0.10);
+        alpha = math.min(0.97, alpha + 0.14);
       }
 
       smoothed[type] = PoseLandmark(
@@ -667,7 +707,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
         y: previousPoint.y * (1 - alpha) + currentPoint.y * alpha,
         z: previousPoint.z * (1 - alpha) + currentPoint.z * alpha,
         likelihood:
-            math.max(previousPoint.likelihood * 0.83, currentPoint.likelihood),
+            math.max(previousPoint.likelihood * 0.88, currentPoint.likelihood),
       );
     }
 
@@ -852,6 +892,24 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   }
 
   /// 按节流规则播放语音反馈，避免过于频繁地打断用户。
+  String _feedbackPlaceholderText() {
+    final pose = _currentPose;
+    if (pose == null) {
+      return '请先进入镜头，让完整人体出现在画面里';
+    }
+    if (!_hasReliableAnalysisPose(pose)) {
+      return '请保持身体完整入镜，让肩膀和髋部清晰可见';
+    }
+    if (!_actionRecognitionArmed) {
+      final remainingFrames =
+          (_uprightRequiredStableFrames - _uprightStableFrames).clamp(0, 99);
+      return remainingFrames > 0
+          ? '检测到人体，请先稳定站立，保持 $remainingFrames 帧后开始计数'
+          : '检测到人体，请先稳定站立后开始计数';
+    }
+    return '动作监测中';
+  }
+
   Future<void> _maybeSpeakFeedback(ExerciseAnalysisResult analysis) async {
     if (!_voiceEnabled) return;
     if (analysis.issues.isEmpty && !analysis.repJustCountedClean) {
@@ -888,8 +946,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
       _lastSmoothedBlazePose = null;
       _lastPoseSeenAt = null;
       _analysis = null;
-      _actionRecognitionArmed = false;
-      _uprightStableFrames = 0;
+      _resetRecognitionGate();
     });
 
     _publishLiveState(pose: null, analysis: null);
@@ -983,11 +1040,12 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
                       _lastSmoothedBlazePose = null;
                       _lastPoseSeenAt = null;
                       _analysis = null;
-                      _actionRecognitionArmed = false;
-                      _uprightStableFrames = 0;
+                      _resetRecognitionGate();
                     });
                     _lastInferenceAt = DateTime.fromMillisecondsSinceEpoch(0);
                     _lastUiPublishAt = DateTime.fromMillisecondsSinceEpoch(0);
+                    _lastMoveNetAnalysisAt =
+                        DateTime.fromMillisecondsSinceEpoch(0);
                     _publishLiveState(pose: null, analysis: null);
                     _cameraSession += 1;
                     await _primaryController?.dispose();
@@ -1024,6 +1082,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
           IconButton(
             tooltip: '重置计数',
             onPressed: () {
+              _lastMoveNetAnalysisAt = DateTime.fromMillisecondsSinceEpoch(0);
               _analyzer.reset(widget.exerciseType);
               _publishLiveState(pose: _currentPose, analysis: null);
             },
@@ -1191,6 +1250,12 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     final e2eLabel =
         _e2eSamples == 0 ? '--' : _avgE2ELatencyMs.toStringAsFixed(0);
     final dropLabel = '$_droppedPrimaryFrames';
+    final torsoLeanLabel = analysis == null
+        ? '--'
+        : '${(analysis.metrics['torso_lean_deg'] ?? 0).toStringAsFixed(1)}/${(analysis.metrics['torso_lean_limit_3d'] ?? 0).toStringAsFixed(1)}';
+    final kneeValgusLabel = analysis == null
+        ? '--'
+        : '${(analysis.metrics['knee_valgus_angle_deg'] ?? 180).toStringAsFixed(1)}/${(analysis.metrics['knee_valgus_limit_3d'] ?? 0).toStringAsFixed(1)}';
     return Align(
       alignment: Alignment.topCenter,
       child: Container(
@@ -1216,6 +1281,10 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
             _metricItem('端到端', '${e2eLabel}ms'),
             _metricItem('丢帧', dropLabel),
             _metricItem('语音', _voiceEnabled ? '开' : '关'),
+            if (widget.exerciseType == ExerciseType.squat)
+              _metricItem('躯干3D', torsoLeanLabel),
+            if (widget.exerciseType == ExerciseType.squat)
+              _metricItem('膝线3D', kneeValgusLabel),
           ],
         ),
       ),
@@ -1260,9 +1329,13 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     final issue = analysis != null && analysis.issues.isNotEmpty
         ? analysis.issues.first
         : null;
-    final feedbackText = !_actionRecognitionArmed
-        ? '请先完整站立进入镜头，再开始动作识别'
-        : analysis?.feedback ?? '请先完成一个标准动作后再开始提示';
+    final feedbackText = !_actionRecognitionArmed || analysis == null
+        ? '动作监测中'
+        : (analysis.issues.isEmpty &&
+                !analysis.repJustCounted &&
+                !analysis.repJustCountedClean)
+            ? '动作监测中'
+            : analysis.feedback;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1299,7 +1372,9 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
           ),
           const SizedBox(height: 10),
           Text(
-            feedbackText,
+            !_actionRecognitionArmed || analysis == null
+                ? _feedbackPlaceholderText()
+                : feedbackText,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 17,

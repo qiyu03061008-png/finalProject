@@ -44,9 +44,12 @@ class PoseAnalyzer {
   DateTime? _squatPhaseChangedAt;
 
 // 只使用3D指标，记录本次深蹲过程中出现过的最严重错误数值
-  double? _squatRepMinKneeInward;
+  double? _squatRepMinKneeValgusAngle;
   double? _squatRepMaxTorsoLeanDeg;
-  double? _squatRepMaxKneeOverToe;
+  double? _squatRepMaxShankLeanDeg;
+  bool _squatRepObservedValgus = false;
+  bool _squatRepObservedTorsoLean = false;
+  bool _squatRepObservedKneeOverToe = false;
   double? _squatTopAngleRef;
 
   bool _pushupRepSeenDown = false;
@@ -148,27 +151,51 @@ class PoseAnalyzer {
       snapshot['squatTorsoLeanDeg'],
       alpha: _emaSlow,
     );
-    final kneeInward = _smoothMetric(
-      'squat_knee_inward_ratio',
-      snapshot['squatKneeInwardRatio'],
+    final kneeValgusAngle = _smoothMetric(
+      'squat_knee_valgus_angle',
+      snapshot['squatKneeValgusAngle'],
       alpha: _emaSlow,
     );
-    final kneeOverToe = _smoothMetric(
-      'squat_knee_over_toe',
-      snapshot['squatKneeOverToe'],
+    final shankLeanDeg = _smoothMetric(
+      'squat_shank_lean_deg',
+      snapshot['squatShankLeanDeg'],
       alpha: _emaSlow,
     );
+    final torsoLeanConfidence = snapshot['squatTorsoLeanConfidence'] ?? 0.0;
+    final kneeValgusConfidence = snapshot['squatKneeValgusConfidence'] ?? 0.0;
+    final kneeValgusDisagreement =
+        snapshot['squatKneeValgusDisagreementDeg'] ?? 0.0;
+    final shankLeanConfidence = snapshot['squatShankLeanConfidence'] ?? 0.0;
+    final shankLeanDisagreement =
+        snapshot['squatShankLeanDisagreementDeg'] ?? 0.0;
     // 只基于3D指标的深蹲错误阈值。
-// kneeInward 数值越小，膝盖越可能内扣。
-// 这里比原配置稍微敏感一点，否则明显内扣也容易漏报。
-    final kneeValgusLimit = math.max(
-      t.maxKneeInwardRatio + (isMoveNet ? 0.10 : 0.08),
-      isMoveNet ? 0.90 : 0.92,
-    );
+    final kneeValgusLimit = t.maxKneeValgusAngleDeg;
 
-    final torsoLeanLimit = t.maxTorsoLeanDeg + (isMoveNet ? 1 : 2);
+    final torsoLeanLimit = t.maxTorsoLeanDeg + (isMoveNet ? 0 : 1);
 
-    final kneeOverToeLimit = t.maxKneeOverToe - (isMoveNet ? 0.03 : 0.02);
+    final shankLeanLimit = t.maxShankLeanDeg;
+    final valgusTriggerMargin = isMoveNet ? 10.0 : 8.0;
+    final torsoLeanTriggerMargin = isMoveNet ? 3.0 : 2.0;
+    final shankLeanTriggerMargin = isMoveNet ? 4.0 : 3.0;
+    final squatLoadPhase = kneeAngle != null &&
+        kneeAngle <= (t.squatUpAngle - (isMoveNet ? 16 : 12));
+    final torsoLeanReliable = torsoLeanConfidence >= 0.45;
+    final kneeValgusReliable =
+        kneeValgusConfidence >= 0.68 && kneeValgusDisagreement <= 10;
+    final shankLeanReliable =
+        shankLeanConfidence >= 0.5 && shankLeanDisagreement <= 14;
+    final currentTorsoLeanActive = torsoLeanReliable &&
+        squatLoadPhase &&
+        torsoLeanDeg != null &&
+        torsoLeanDeg > torsoLeanLimit + torsoLeanTriggerMargin;
+    final currentValgusActive = kneeValgusReliable &&
+        squatLoadPhase &&
+        kneeValgusAngle != null &&
+        kneeValgusAngle < kneeValgusLimit - valgusTriggerMargin;
+    final currentKneeToeActive = shankLeanReliable &&
+        squatLoadPhase &&
+        shankLeanDeg != null &&
+        shankLeanDeg > shankLeanLimit + shankLeanTriggerMargin;
 
     if (kneeAngle != null) {
       _squatMissingFrames = 0;
@@ -209,9 +236,12 @@ class PoseAnalyzer {
           _squatRepSeenDown = true;
           _squatRepMinAngle = kneeAngle;
           _squatPhaseChangedAt ??= pose.timestamp;
-          _squatRepMinKneeInward = kneeInward;
+          _squatRepMinKneeValgusAngle = kneeValgusAngle;
           _squatRepMaxTorsoLeanDeg = torsoLeanDeg;
-          _squatRepMaxKneeOverToe = kneeOverToe;
+          _squatRepMaxShankLeanDeg = shankLeanDeg;
+          _squatRepObservedValgus = false;
+          _squatRepObservedTorsoLean = false;
+          _squatRepObservedKneeOverToe = false;
         }
         if (_squatDownStreak >= holdFrames && !_squatDown) {
           // 真正进入下蹲相位时，记录这一轮动作已经“下去过”。
@@ -223,9 +253,12 @@ class PoseAnalyzer {
           _squatPhaseChangedAt ??= pose.timestamp;
 
           // 初始化本次动作的3D错误极值
-          _squatRepMinKneeInward = kneeInward;
+          _squatRepMinKneeValgusAngle = kneeValgusAngle;
           _squatRepMaxTorsoLeanDeg = torsoLeanDeg;
-          _squatRepMaxKneeOverToe = kneeOverToe;
+          _squatRepMaxShankLeanDeg = shankLeanDeg;
+          _squatRepObservedValgus = false;
+          _squatRepObservedTorsoLean = false;
+          _squatRepObservedKneeOverToe = false;
         }
       // 膝角重新变大，说明正在起身。
       } else if (kneeAngle > effectiveSquatUpGate) {
@@ -244,23 +277,15 @@ class PoseAnalyzer {
               _squatRepSeenDown && !_squatRepReachedDepth;
 
           // 本轮动作过程中曾经出现过的3D错误
-          squatFinishedWithValgus =
-              _squatRepMinKneeInward != null &&
-                  _squatRepMinKneeInward! < kneeValgusLimit;
-
-          squatFinishedWithTorsoLean =
-              _squatRepMaxTorsoLeanDeg != null &&
-                  _squatRepMaxTorsoLeanDeg! > torsoLeanLimit;
-
-          squatFinishedWithKneeOverToe =
-              _squatRepMaxKneeOverToe != null &&
-                  _squatRepMaxKneeOverToe! > kneeOverToeLimit;
+          squatFinishedWithValgus = _squatRepObservedValgus;
+          squatFinishedWithTorsoLean = _squatRepObservedTorsoLean;
+          squatFinishedWithKneeOverToe = _squatRepObservedKneeOverToe;
 
           _squatDown = false;
           _squatPhaseChangedAt = pose.timestamp;
           // 只有“下去过 + 深度够 + 速度不过快 + 起身够明显”才算一次完整动作。
           final squatMotionEnough = _squatRepMinAngle != null &&
-              kneeAngle - _squatRepMinAngle! >= (isMoveNet ? 32 : 26);
+              kneeAngle - _squatRepMinAngle! >= (isMoveNet ? 24 : 20);
 
           if (repReachedConfirmedBottom &&
               _squatRepSeenDown &&
@@ -277,9 +302,12 @@ class PoseAnalyzer {
           _squatRepReachedDepth = false;
           _squatRepHasIssue = false;
           _squatRepMinAngle = null;
-          _squatRepMinKneeInward = null;
+          _squatRepMinKneeValgusAngle = null;
           _squatRepMaxTorsoLeanDeg = null;
-          _squatRepMaxKneeOverToe = null;
+          _squatRepMaxShankLeanDeg = null;
+          _squatRepObservedValgus = false;
+          _squatRepObservedTorsoLean = false;
+          _squatRepObservedKneeOverToe = false;
         }
       } else {
         _squatDownStreak = 0;
@@ -292,23 +320,30 @@ class PoseAnalyzer {
             ? kneeAngle
             : math.min(_squatRepMinAngle!, kneeAngle);
 
-        if (kneeInward != null) {
-          _squatRepMinKneeInward = _squatRepMinKneeInward == null
-              ? kneeInward
-              : math.min(_squatRepMinKneeInward!, kneeInward);
+        if (kneeValgusReliable && kneeValgusAngle != null) {
+          _squatRepMinKneeValgusAngle = _squatRepMinKneeValgusAngle == null
+              ? kneeValgusAngle
+              : math.min(_squatRepMinKneeValgusAngle!, kneeValgusAngle);
         }
 
-        if (torsoLeanDeg != null) {
+        if (torsoLeanReliable && torsoLeanDeg != null) {
           _squatRepMaxTorsoLeanDeg = _squatRepMaxTorsoLeanDeg == null
               ? torsoLeanDeg
               : math.max(_squatRepMaxTorsoLeanDeg!, torsoLeanDeg);
         }
 
-        if (kneeOverToe != null) {
-          _squatRepMaxKneeOverToe = _squatRepMaxKneeOverToe == null
-              ? kneeOverToe
-              : math.max(_squatRepMaxKneeOverToe!, kneeOverToe);
+        if (shankLeanReliable && shankLeanDeg != null) {
+          _squatRepMaxShankLeanDeg = _squatRepMaxShankLeanDeg == null
+              ? shankLeanDeg
+              : math.max(_squatRepMaxShankLeanDeg!, shankLeanDeg);
         }
+
+        _squatRepObservedValgus =
+            _squatRepObservedValgus || currentValgusActive;
+        _squatRepObservedTorsoLean =
+            _squatRepObservedTorsoLean || currentTorsoLeanActive;
+        _squatRepObservedKneeOverToe =
+            _squatRepObservedKneeOverToe || currentKneeToeActive;
       }
 
       // 只要下蹲时达到过目标深度，就把本轮动作标记为“深度达标”。
@@ -352,22 +387,22 @@ class PoseAnalyzer {
         _squatRepReachedDepth = false;
         _squatRepHasIssue = false;
         _squatRepMinAngle = null;
-        _squatRepMinKneeInward = null;
+        _squatRepMinKneeValgusAngle = null;
         _squatRepMaxTorsoLeanDeg = null;
-        _squatRepMaxKneeOverToe = null;
+        _squatRepMaxShankLeanDeg = null;
+        _squatRepObservedValgus = false;
+        _squatRepObservedTorsoLean = false;
+        _squatRepObservedKneeOverToe = false;
         _squatPhaseChangedAt = null;
       }
     }
 
     if (torsoLeanDeg != null || squatFinishedWithTorsoLean) {
-      final currentTorsoLeanActive =
-          torsoLeanDeg != null && torsoLeanDeg > torsoLeanLimit;
-
       final torsoLeanIssue = _stableIssue(
         type: PoseErrorType.torsoLeanForward,
         active: (_squatDown || _squatRepSeenDown || squatFinishedThisFrame) &&
             (currentTorsoLeanActive || squatFinishedWithTorsoLean),
-        onFrames: squatFinishedWithTorsoLean ? 1 : _issueOnFrames,
+        onFrames: 1,
         build: () => PoseIssue(
           type: PoseErrorType.torsoLeanForward,
           message: '躯干前倾过多',
@@ -385,24 +420,21 @@ class PoseAnalyzer {
       }
     }
 
-    if (kneeInward != null || squatFinishedWithValgus) {
+    if (kneeValgusAngle != null || squatFinishedWithValgus) {
       final stanceHint = profile.shoulderToHipRatio > 1.25
           ? '略微加宽站距，并主动把膝盖向外打开'
           : '让膝盖始终跟随脚尖方向移动';
-
-      final currentValgusActive =
-          kneeInward != null && kneeInward < kneeValgusLimit;
 
       final kneeValgusIssue = _stableIssue(
         type: PoseErrorType.kneeValgus,
         active: (_squatDown || _squatRepSeenDown || squatFinishedThisFrame) &&
             (currentValgusActive || squatFinishedWithValgus),
-        onFrames: squatFinishedWithValgus ? 1 : (isMoveNet ? 1 : _issueOnFrames),
+        onFrames: isMoveNet ? 3 : 2,
         build: () => PoseIssue(
           type: PoseErrorType.kneeValgus,
           message: '检测到膝盖内扣',
           suggestion:
-          '$stanceHint。当前3D比值 ${(kneeInward ?? _squatRepMinKneeInward ?? 0).toStringAsFixed(2)}，建议不低于 ${kneeValgusLimit.toStringAsFixed(2)}',
+          '$stanceHint。当前3D夹角 ${(kneeValgusAngle ?? _squatRepMinKneeValgusAngle ?? 0).toStringAsFixed(1)}°，建议不低于 ${kneeValgusLimit.toStringAsFixed(1)}°',
           severity: 0.88,
         ),
       );
@@ -416,13 +448,10 @@ class PoseAnalyzer {
       }
     }
 
-    if (kneeOverToe != null || squatFinishedWithKneeOverToe) {
+    if (shankLeanDeg != null || squatFinishedWithKneeOverToe) {
       final limbHint = profile.legLengthRatio > 0.56
           ? '先向后坐髋，再让膝盖自然前移'
           : '稳住脚跟，控制膝盖前移幅度';
-
-      final currentKneeToeActive =
-          kneeOverToe != null && kneeOverToe > kneeOverToeLimit;
 
       final kneeToeIssue = _stableIssue(
         type: PoseErrorType.kneeOverToe,
@@ -433,7 +462,7 @@ class PoseAnalyzer {
           type: PoseErrorType.kneeOverToe,
           message: '膝盖前移过多',
           suggestion:
-          '$limbHint。当前3D前移值 ${(kneeOverToe ?? _squatRepMaxKneeOverToe ?? 0).toStringAsFixed(2)}，建议不高于 ${kneeOverToeLimit.toStringAsFixed(2)}',
+          '$limbHint。当前3D小腿前倾 ${(shankLeanDeg ?? _squatRepMaxShankLeanDeg ?? 0).toStringAsFixed(1)}°，建议不高于 ${shankLeanLimit.toStringAsFixed(1)}°',
           severity: 0.55,
         ),
       );
@@ -462,10 +491,15 @@ class PoseAnalyzer {
       metrics: <String, double>{
         'knee_angle': kneeAngle ?? 0.0,
         'torso_lean_deg': torsoLeanDeg ?? 0.0,
-        'knee_inward_ratio': kneeInward ?? 1.0,
-        'knee_inward_limit_3d': kneeValgusLimit,
-        'knee_over_toe': kneeOverToe ?? 0.0,
-        'knee_over_toe_limit_3d': kneeOverToeLimit,
+        'torso_lean_conf': torsoLeanConfidence,
+        'knee_valgus_angle_deg': kneeValgusAngle ?? 180.0,
+        'knee_valgus_conf': kneeValgusConfidence,
+        'knee_valgus_disagreement_deg': kneeValgusDisagreement,
+        'knee_valgus_limit_3d': kneeValgusLimit,
+        'shank_lean_deg': shankLeanDeg ?? 0.0,
+        'shank_lean_conf': shankLeanConfidence,
+        'shank_lean_disagreement_deg': shankLeanDisagreement,
+        'shank_lean_limit_3d': shankLeanLimit,
         'torso_lean_limit_3d': torsoLeanLimit,
         'height_cm': profile.heightCm,
       },
@@ -504,7 +538,7 @@ class PoseAnalyzer {
         repJustCountedClean: false,
         issues: const <PoseIssue>[],
         depthModeLabel: '单目 3D',
-        metrics: const <String, double>{},
+        metrics: const <String, double>{'motion_active': 0},
       );
     }
     // 与深蹲相同，俯卧撑也会按模型来源微调判定门槛。
@@ -549,6 +583,12 @@ class PoseAnalyzer {
       snapshot['pushupElbowFlareDeg'],
       alpha: _emaSlow,
     );
+    final elbowAngleConfidence = snapshot['pushupElbowAngleConfidence'] ?? 0.0;
+    final bodyLineConfidence = snapshot['pushupBodyLineConfidence'] ?? 0.0;
+    final hipOffsetConfidence = snapshot['pushupHipOffsetConfidence'] ?? 0.0;
+    final elbowFlareConfidence = snapshot['pushupElbowFlareConfidence'] ?? 0.0;
+    final elbowFlareDisagreement =
+        snapshot['pushupElbowFlareDisagreementDeg'] ?? 0.0;
 
     if (elbowAngle != null) {
       _pushupMissingFrames = 0;
@@ -649,7 +689,8 @@ class PoseAnalyzer {
 
       final depthIssue = _stableIssue(
         type: PoseErrorType.pushupDepthNotEnough,
-        active: (_pushupRepSeenDown || _pushupDown) &&
+        active: elbowAngleConfidence >= 0.45 &&
+            (_pushupRepSeenDown || _pushupDown) &&
             !_pushupRepReachedDepth &&
             _pushupRepMinAngle != null &&
             elbowAngle > _pushupRepMinAngle! + 8 &&
@@ -684,7 +725,10 @@ class PoseAnalyzer {
     if (hipOffset != null && bodyLineDeviation != null) {
       final sagIssue = _stableIssue(
         type: PoseErrorType.pushupHipSag,
-        active: hipOffset < t.pushupHipSagOffset &&
+        active: (_pushupRepSeenDown || _pushupDown) &&
+            bodyLineConfidence >= 0.45 &&
+            hipOffsetConfidence >= 0.45 &&
+            hipOffset < t.pushupHipSagOffset - 0.01 &&
             bodyLineDeviation > (180 - t.maxHipSagDeg).abs(),
         build: () {
           final braceHint = profile.weightKg > 80
@@ -705,7 +749,10 @@ class PoseAnalyzer {
 
       final pikeIssue = _stableIssue(
         type: PoseErrorType.pushupHipPike,
-        active: hipOffset > t.pushupHipPikeOffset &&
+        active: (_pushupRepSeenDown || _pushupDown) &&
+            bodyLineConfidence >= 0.45 &&
+            hipOffsetConfidence >= 0.45 &&
+            hipOffset > t.pushupHipPikeOffset + 0.01 &&
             bodyLineDeviation > (t.maxHipPikeDeg - 180).abs(),
         build: () {
           final armHint = profile.armLengthRatio > 0.47
@@ -728,7 +775,10 @@ class PoseAnalyzer {
     if (elbowFlare != null) {
       final flareIssue = _stableIssue(
         type: PoseErrorType.pushupElbowFlare,
-        active: elbowFlare > t.maxElbowFlareDeg - (isMoveNet ? 4 : 0),
+        active: (_pushupRepSeenDown || _pushupDown) &&
+            elbowFlareConfidence >= 0.55 &&
+            elbowFlareDisagreement <= 18 &&
+            elbowFlare > t.maxElbowFlareDeg + (isMoveNet ? 2 : 0),
         build: () => PoseIssue(
           type: PoseErrorType.pushupElbowFlare,
           message: '手肘外展过大',
@@ -760,11 +810,17 @@ class PoseAnalyzer {
       issues: sortedIssues,
       depthModeLabel: '单目 3D',
       metrics: <String, double>{
+        'motion_active': (_pushupRepSeenDown || _pushupDown) ? 1 : 0,
         'elbow_angle': elbowAngle ?? 0.0,
+        'elbow_angle_conf': elbowAngleConfidence,
         'body_line_angle': bodyLineAngle ?? 0.0,
         'body_line_deviation': bodyLineDeviation ?? 0.0,
+        'body_line_conf': bodyLineConfidence,
         'hip_offset_ratio': hipOffset ?? 0.0,
+        'hip_offset_conf': hipOffsetConfidence,
         'elbow_flare_deg': elbowFlare ?? 0.0,
+        'elbow_flare_conf': elbowFlareConfidence,
+        'elbow_flare_disagreement_deg': elbowFlareDisagreement,
         'weight_kg': profile.weightKg,
       },
     );
@@ -791,6 +847,7 @@ class PoseAnalyzer {
         issues: const <PoseIssue>[],
         depthModeLabel: '单目 3D',
         metrics: <String, double>{
+          'motion_active': 0,
           'hold_seconds': _plankHoldSeconds,
         },
       );
@@ -816,6 +873,9 @@ class PoseAnalyzer {
       snapshot['plankNeckAngle'],
       alpha: _emaSlow,
     );
+    final bodyLineConfidence = snapshot['plankBodyLineConfidence'] ?? 0.0;
+    final hipOffsetConfidence = snapshot['plankHipOffsetConfidence'] ?? 0.0;
+    final neckConfidence = snapshot['plankNeckConfidence'] ?? 0.0;
 
     final now = pose.timestamp;
     final dt = _lastPlankTimestamp == null
@@ -832,7 +892,9 @@ class PoseAnalyzer {
     if (hipOffset != null && bodyLineDeviation != null) {
       final sagIssue = _stableIssue(
         type: PoseErrorType.plankHipSag,
-        active: hipOffset < t.plankHipSagOffset &&
+        active: bodyLineConfidence >= 0.45 &&
+            hipOffsetConfidence >= 0.45 &&
+            hipOffset < t.plankHipSagOffset - 0.01 &&
             bodyLineDeviation > neutralDeviationLimit,
         build: () => const PoseIssue(
           type: PoseErrorType.plankHipSag,
@@ -847,7 +909,9 @@ class PoseAnalyzer {
 
       final pikeIssue = _stableIssue(
         type: PoseErrorType.plankHipPike,
-        active: hipOffset > t.plankHipPikeOffset &&
+        active: bodyLineConfidence >= 0.45 &&
+            hipOffsetConfidence >= 0.45 &&
+            hipOffset > t.plankHipPikeOffset + 0.01 &&
             bodyLineDeviation > neutralDeviationLimit,
         build: () => const PoseIssue(
           type: PoseErrorType.plankHipPike,
@@ -864,7 +928,7 @@ class PoseAnalyzer {
     if (neckAngle != null) {
       final neckIssue = _stableIssue(
         type: PoseErrorType.plankNeckNotNeutral,
-        active: neckAngle < t.maxNeckAngle,
+        active: neckConfidence >= 0.5 && neckAngle < t.maxNeckAngle - 3,
         build: () => PoseIssue(
           type: PoseErrorType.plankNeckNotNeutral,
           message: '颈部姿态不够中立',
@@ -900,10 +964,14 @@ class PoseAnalyzer {
       issues: sortedIssues,
       depthModeLabel: '单目 3D',
       metrics: <String, double>{
+        'motion_active': 1,
         'body_line_angle': bodyLineAngle ?? 0.0,
         'body_line_deviation': bodyLineDeviation ?? 0.0,
+        'body_line_conf': bodyLineConfidence,
         'hip_offset_ratio': hipOffset ?? 0.0,
+        'hip_offset_conf': hipOffsetConfidence,
         'neck_angle': neckAngle ?? 0.0,
+        'neck_conf': neckConfidence,
         'hold_seconds': _plankHoldSeconds,
         'height_cm': profile.heightCm,
       },
@@ -924,9 +992,12 @@ class PoseAnalyzer {
         _squatRepHasIssue = false;
         _squatRepMinAngle = null;
         _squatPhaseChangedAt = null;
-        _squatRepMinKneeInward = null;
+        _squatRepMinKneeValgusAngle = null;
         _squatRepMaxTorsoLeanDeg = null;
-        _squatRepMaxKneeOverToe = null;
+        _squatRepMaxShankLeanDeg = null;
+        _squatRepObservedValgus = false;
+        _squatRepObservedTorsoLean = false;
+        _squatRepObservedKneeOverToe = false;
         _squatTopAngleRef = null;
         break;
       case ExerciseType.pushup:
@@ -941,9 +1012,9 @@ class PoseAnalyzer {
         _pushupRepMinAngle = null;
         _pushupPhaseChangedAt = null;
         _pushupTopAngleRef = null;
-        _squatRepMinKneeInward = null;
+        _squatRepMinKneeValgusAngle = null;
         _squatRepMaxTorsoLeanDeg = null;
-        _squatRepMaxKneeOverToe = null;
+        _squatRepMaxShankLeanDeg = null;
         break;
       case ExerciseType.plank:
         _plankHoldSeconds = 0;

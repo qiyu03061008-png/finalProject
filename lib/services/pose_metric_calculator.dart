@@ -25,31 +25,106 @@ class PoseMetricCalculator {
   PoseMetricSnapshot calculate(Pose pose) {
     // 先建立身体局部坐标系，后面很多 3D 指标都依赖它。
     final frame = _buildBodyFrame(pose);
-    final kneeAngle = _avg(
-      _jointAngleForRep(
-        pose[PoseLandmarkType.leftHip],
-        pose[PoseLandmarkType.leftKnee],
-        pose[PoseLandmarkType.leftAnkle],
+    final leftKneeAngle = _jointAngleForRep(
+      pose[PoseLandmarkType.leftHip],
+      pose[PoseLandmarkType.leftKnee],
+      pose[PoseLandmarkType.leftAnkle],
+    );
+    final rightKneeAngle = _jointAngleForRep(
+      pose[PoseLandmarkType.rightHip],
+      pose[PoseLandmarkType.rightKnee],
+      pose[PoseLandmarkType.rightAnkle],
+    );
+    final kneeAngleMetric = _combineSideMetrics(
+      _metricFromChain(
+        leftKneeAngle,
+        <PoseLandmark?>[
+          pose[PoseLandmarkType.leftHip],
+          pose[PoseLandmarkType.leftKnee],
+          pose[PoseLandmarkType.leftAnkle],
+        ],
       ),
-      _jointAngleForRep(
-        pose[PoseLandmarkType.rightHip],
-        pose[PoseLandmarkType.rightKnee],
-        pose[PoseLandmarkType.rightAnkle],
+      _metricFromChain(
+        rightKneeAngle,
+        <PoseLandmark?>[
+          pose[PoseLandmarkType.rightHip],
+          pose[PoseLandmarkType.rightKnee],
+          pose[PoseLandmarkType.rightAnkle],
+        ],
       ),
+      disagreementToleranceDeg: 18,
+      singleSidePenalty: 0.88,
     );
 
-    final bodyLineAngle = _avg(
-      _jointAngleForRep(
-        pose[PoseLandmarkType.leftShoulder],
-        pose[PoseLandmarkType.leftHip],
-        pose[PoseLandmarkType.leftAnkle],
-      ),
-      _jointAngleForRep(
-        pose[PoseLandmarkType.rightShoulder],
-        pose[PoseLandmarkType.rightHip],
-        pose[PoseLandmarkType.rightAnkle],
-      ),
+    final leftBodyLineAngle = _jointAngleForRep(
+      pose[PoseLandmarkType.leftShoulder],
+      pose[PoseLandmarkType.leftHip],
+      pose[PoseLandmarkType.leftAnkle],
     );
+    final rightBodyLineAngle = _jointAngleForRep(
+      pose[PoseLandmarkType.rightShoulder],
+      pose[PoseLandmarkType.rightHip],
+      pose[PoseLandmarkType.rightAnkle],
+    );
+    final bodyLineMetric = _combineSideMetrics(
+      _metricFromChain(
+        leftBodyLineAngle,
+        <PoseLandmark?>[
+          pose[PoseLandmarkType.leftShoulder],
+          pose[PoseLandmarkType.leftHip],
+          pose[PoseLandmarkType.leftAnkle],
+        ],
+      ),
+      _metricFromChain(
+        rightBodyLineAngle,
+        <PoseLandmark?>[
+          pose[PoseLandmarkType.rightShoulder],
+          pose[PoseLandmarkType.rightHip],
+          pose[PoseLandmarkType.rightAnkle],
+        ],
+      ),
+      disagreementToleranceDeg: 14,
+      singleSidePenalty: 0.85,
+    );
+
+    final torsoLeanMetric = _torsoForwardLeanDeg(pose, frame);
+    final kneeValgusMetric =
+        frame == null ? null : _kneeValgusAngle3D(pose, frame);
+    final shankLeanMetric =
+        frame == null ? null : _shankForwardLeanDeg3D(pose, frame);
+    final pushupElbowMetric = _combineSideMetrics(
+      _metricFromChain(
+        _jointAngleForRep(
+          pose[PoseLandmarkType.leftShoulder],
+          pose[PoseLandmarkType.leftElbow],
+          pose[PoseLandmarkType.leftWrist],
+        ),
+        <PoseLandmark?>[
+          pose[PoseLandmarkType.leftShoulder],
+          pose[PoseLandmarkType.leftElbow],
+          pose[PoseLandmarkType.leftWrist],
+        ],
+      ),
+      _metricFromChain(
+        _jointAngleForRep(
+          pose[PoseLandmarkType.rightShoulder],
+          pose[PoseLandmarkType.rightElbow],
+          pose[PoseLandmarkType.rightWrist],
+        ),
+        <PoseLandmark?>[
+          pose[PoseLandmarkType.rightShoulder],
+          pose[PoseLandmarkType.rightElbow],
+          pose[PoseLandmarkType.rightWrist],
+        ],
+      ),
+      disagreementToleranceDeg: 20,
+      singleSidePenalty: 0.9,
+    );
+    final hipOffsetMetric =
+        frame == null ? null : _bodyLineHipOffset(pose, frame);
+    final elbowFlareMetric =
+        frame == null ? null : _elbowFlareMetric3D(pose, frame);
+    final neckMetric = frame == null ? null : _neckNeutralAngle3D(pose, frame);
 
     final metrics = <String, double>{};
     void addMetric(String key, double? value) {
@@ -59,51 +134,48 @@ class PoseMetricCalculator {
       }
     }
 
-    addMetric('squatKneeAngle', kneeAngle);
-    addMetric('squatTorsoLeanDeg', _torsoForwardLeanDeg(pose, frame));
+    addMetric('squatKneeAngle', kneeAngleMetric.value);
+    addMetric('squatKneeAngleConfidence', kneeAngleMetric.confidence);
+    addMetric('squatTorsoLeanDeg', torsoLeanMetric?.value);
+    addMetric('squatTorsoLeanConfidence', torsoLeanMetric?.confidence);
+    addMetric('squatKneeValgusAngle', kneeValgusMetric?.value);
+    addMetric('squatKneeValgusConfidence', kneeValgusMetric?.confidence);
     addMetric(
-      'squatKneeInwardRatio',
-      frame == null ? null : _kneeInwardRatio3D(pose, frame),
+      'squatKneeValgusDisagreementDeg',
+      kneeValgusMetric?.disagreementDeg,
     );
+    addMetric('squatShankLeanDeg', shankLeanMetric?.value);
+    addMetric('squatShankLeanConfidence', shankLeanMetric?.confidence);
     addMetric(
-      'squatKneeOverToe',
-      frame == null ? null : _kneeOverToeMetric3D(pose, frame),
+      'squatShankLeanDisagreementDeg',
+      shankLeanMetric?.disagreementDeg,
     );
+    addMetric('pushupElbowAngle', pushupElbowMetric.value);
+    addMetric('pushupElbowAngleConfidence', pushupElbowMetric.confidence);
+    addMetric('pushupBodyLineAngle', bodyLineMetric.value);
+    addMetric('pushupBodyLineConfidence', bodyLineMetric.confidence);
     addMetric(
-      'pushupElbowAngle',
-      _avg(
-        _jointAngleForRep(
-          pose[PoseLandmarkType.leftShoulder],
-          pose[PoseLandmarkType.leftElbow],
-          pose[PoseLandmarkType.leftWrist],
-        ),
-        _jointAngleForRep(
-          pose[PoseLandmarkType.rightShoulder],
-          pose[PoseLandmarkType.rightElbow],
-          pose[PoseLandmarkType.rightWrist],
-        ),
-      ),
+      'pushupBodyLineDeviation',
+      _deviationFromStraight(bodyLineMetric.value),
     );
-    addMetric('pushupBodyLineAngle', bodyLineAngle);
-    addMetric('pushupBodyLineDeviation', _deviationFromStraight(bodyLineAngle));
+    addMetric('pushupHipOffset', hipOffsetMetric?.value);
+    addMetric('pushupHipOffsetConfidence', hipOffsetMetric?.confidence);
+    addMetric('pushupElbowFlareDeg', elbowFlareMetric?.value);
+    addMetric('pushupElbowFlareConfidence', elbowFlareMetric?.confidence);
     addMetric(
-      'pushupHipOffset',
-      frame == null ? null : _bodyLineHipOffset(pose, frame),
+      'pushupElbowFlareDisagreementDeg',
+      elbowFlareMetric?.disagreementDeg,
     );
+    addMetric('plankBodyLineAngle', bodyLineMetric.value);
+    addMetric('plankBodyLineConfidence', bodyLineMetric.confidence);
     addMetric(
-      'pushupElbowFlareDeg',
-      frame == null ? null : _elbowFlareMetric3D(pose, frame),
+      'plankBodyLineDeviation',
+      _deviationFromStraight(bodyLineMetric.value),
     );
-    addMetric('plankBodyLineAngle', bodyLineAngle);
-    addMetric('plankBodyLineDeviation', _deviationFromStraight(bodyLineAngle));
-    addMetric(
-      'plankHipOffset',
-      frame == null ? null : _bodyLineHipOffset(pose, frame),
-    );
-    addMetric(
-      'plankNeckAngle',
-      frame == null ? null : _neckNeutralAngleStable(pose, frame),
-    );
+    addMetric('plankHipOffset', hipOffsetMetric?.value);
+    addMetric('plankHipOffsetConfidence', hipOffsetMetric?.confidence);
+    addMetric('plankNeckAngle', neckMetric?.value);
+    addMetric('plankNeckConfidence', neckMetric?.confidence);
 
     return PoseMetricSnapshot(
       metrics: metrics,
@@ -233,8 +305,8 @@ class PoseMetricCalculator {
     );
   }
 
-  /// 计算躯干相对下肢支撑线的前倾角度。
-  double? _torsoForwardLeanDeg(Pose pose, _BodyFrame? frame) {
+  /// 计算躯干向量与下肢支撑向量在矢状面的3D夹角。
+  _CombinedMetric? _torsoForwardLeanDeg(Pose pose, _BodyFrame? frame) {
     if (frame == null) {
       return null;
     }
@@ -264,20 +336,32 @@ class PoseMetricCalculator {
       return null;
     }
 
-    final signed = _signedAngleOnPlane(support, torso, frame.lateral);
-    return max(0.0, signed);
+    final angle = _vectorAngle3(support, torso);
+    if (angle.isNaN || !angle.isFinite) {
+      return null;
+    }
+    return _CombinedMetric(
+      value: angle,
+      confidence: _chainConfidence(<PoseLandmark?>[
+        pose[PoseLandmarkType.leftShoulder],
+        pose[PoseLandmarkType.rightShoulder],
+        pose[PoseLandmarkType.leftHip],
+        pose[PoseLandmarkType.rightHip],
+        pose[PoseLandmarkType.leftAnkle],
+        pose[PoseLandmarkType.rightAnkle],
+      ]),
+    );
   }
 
-  double? _kneeInwardRatio3D(Pose pose, _BodyFrame frame) {
-    final hipCenter = _midpoint(
-      pose[PoseLandmarkType.leftHip],
-      pose[PoseLandmarkType.rightHip],
-    );
+  _CombinedMetric? _kneeValgusAngle3D(Pose pose, _BodyFrame frame) {
+    final leftHip = pose[PoseLandmarkType.leftHip];
+    final rightHip = pose[PoseLandmarkType.rightHip];
     final leftKnee = pose[PoseLandmarkType.leftKnee];
     final rightKnee = pose[PoseLandmarkType.rightKnee];
     final leftAnkle = pose[PoseLandmarkType.leftAnkle];
     final rightAnkle = pose[PoseLandmarkType.rightAnkle];
-    if (!_isReliable(hipCenter) ||
+    if (!_isReliable(leftHip) ||
+        !_isReliable(rightHip) ||
         !_isReliable(leftKnee) ||
         !_isReliable(rightKnee) ||
         !_isReliable(leftAnkle) ||
@@ -285,60 +369,54 @@ class PoseMetricCalculator {
       return null;
     }
 
-    final leftKneeLat = _lateralCoord(leftKnee!, frame, hipCenter!);
-    final rightKneeLat = _lateralCoord(rightKnee!, frame, hipCenter);
-    final leftAnkleLat = _lateralCoord(leftAnkle!, frame, hipCenter);
-    final rightAnkleLat = _lateralCoord(rightAnkle!, frame, hipCenter);
-    if (leftAnkleLat.abs() < 1e-5 || rightAnkleLat.abs() < 1e-5) {
-      return null;
-    }
-
-    // 膝盖横向位置与脚踝横向位置越接近，通常说明膝盖没有明显内扣。
-    final leftRatio = leftKneeLat.abs() / leftAnkleLat.abs();
-    final rightRatio = rightKneeLat.abs() / rightAnkleLat.abs();
-    return (leftRatio + rightRatio) / 2.0;
+    return _combineSideMetrics(
+      _metricFromChain(
+        _frontalAlignmentAngle(leftHip!, leftKnee!, leftAnkle!, frame),
+        <PoseLandmark?>[leftHip, leftKnee, leftAnkle],
+      ),
+      _metricFromChain(
+        _frontalAlignmentAngle(rightHip!, rightKnee!, rightAnkle!, frame),
+        <PoseLandmark?>[rightHip, rightKnee, rightAnkle],
+      ),
+      disagreementToleranceDeg: 16,
+      singleSidePenalty: 0.8,
+    );
   }
 
-  double? _kneeOverToeMetric3D(Pose pose, _BodyFrame frame) {
+  _CombinedMetric? _shankForwardLeanDeg3D(Pose pose, _BodyFrame frame) {
     final leftKnee = pose[PoseLandmarkType.leftKnee];
     final rightKnee = pose[PoseLandmarkType.rightKnee];
     final leftAnkle = pose[PoseLandmarkType.leftAnkle];
     final rightAnkle = pose[PoseLandmarkType.rightAnkle];
-    final leftFoot = pose[PoseLandmarkType.leftFootIndex] ?? leftAnkle;
-    final rightFoot = pose[PoseLandmarkType.rightFootIndex] ?? rightAnkle;
     if (!_isReliable(leftKnee) ||
         !_isReliable(rightKnee) ||
         !_isReliable(leftAnkle) ||
-        !_isReliable(rightAnkle) ||
-        !_isReliable(leftFoot) ||
-        !_isReliable(rightFoot)) {
+        !_isReliable(rightAnkle)) {
       return null;
     }
 
-    // 只关心“膝盖超过脚尖多少”，没有超过时按 0 处理。
-    final leftForward =
-        ((_forwardCoord(leftKnee!, frame) - _forwardCoord(leftFoot!, frame))
-                .clamp(0.0, double.infinity) as num)
-            .toDouble();
-    final rightForward =
-        ((_forwardCoord(rightKnee!, frame) - _forwardCoord(rightFoot!, frame))
-                .clamp(0.0, double.infinity) as num)
-            .toDouble();
-
-    final leftShank =
-        _projectToSagittal(_vector3(leftAnkle!, leftKnee), frame).magnitude;
-    final rightShank =
-        _projectToSagittal(_vector3(rightAnkle!, rightKnee), frame).magnitude;
-    if (leftShank < 1e-5 || rightShank < 1e-5) {
-      return null;
-    }
-
-    // 用小腿长度归一化，减少不同身材带来的绝对距离差异。
-    return ((leftForward / leftShank) + (rightForward / rightShank)) / 2.0;
+    return _combineSideMetrics(
+      _metricFromChain(
+        _segmentLeanFromUp(
+          _projectToSagittal(_vector3(leftAnkle!, leftKnee!), frame),
+          frame,
+        ),
+        <PoseLandmark?>[leftKnee, leftAnkle],
+      ),
+      _metricFromChain(
+        _segmentLeanFromUp(
+          _projectToSagittal(_vector3(rightAnkle!, rightKnee!), frame),
+          frame,
+        ),
+        <PoseLandmark?>[rightKnee, rightAnkle],
+      ),
+      disagreementToleranceDeg: 12,
+      singleSidePenalty: 0.82,
+    );
   }
 
   /// 计算髋部偏离肩到踝参考线的程度。
-  double? _bodyLineHipOffset(Pose pose, _BodyFrame frame) {
+  _CombinedMetric? _bodyLineHipOffset(Pose pose, _BodyFrame frame) {
     final shoulderCenter = _midpoint(
       pose[PoseLandmarkType.leftShoulder],
       pose[PoseLandmarkType.rightShoulder],
@@ -370,10 +448,20 @@ class PoseMetricCalculator {
     final t =
         df.abs() < 1e-5 ? 0.5 : ((h.forward - s.forward) / df).clamp(0.0, 1.0);
     final expectedUp = s.up + (a.up - s.up) * t;
-    return (h.up - expectedUp) / lineLen;
+    return _CombinedMetric(
+      value: (h.up - expectedUp) / lineLen,
+      confidence: _chainConfidence(<PoseLandmark?>[
+        pose[PoseLandmarkType.leftShoulder],
+        pose[PoseLandmarkType.rightShoulder],
+        pose[PoseLandmarkType.leftHip],
+        pose[PoseLandmarkType.rightHip],
+        pose[PoseLandmarkType.leftAnkle],
+        pose[PoseLandmarkType.rightAnkle],
+      ]),
+    );
   }
 
-  double? _elbowFlareMetric3D(Pose pose, _BodyFrame frame) {
+  _CombinedMetric? _elbowFlareMetric3D(Pose pose, _BodyFrame frame) {
     final shoulderCenter = _midpoint(
       pose[PoseLandmarkType.leftShoulder],
       pose[PoseLandmarkType.rightShoulder],
@@ -398,15 +486,27 @@ class PoseMetricCalculator {
     // 在额状面里比较“躯干方向”和“上臂方向”的夹角，用来判断手肘外展。
     final torso =
         _projectToFrontal(_vector3(hipCenter!, shoulderCenter!), frame);
-    final leftUpper =
-        _projectToFrontal(_vector3(leftShoulder!, leftElbow!), frame);
-    final rightUpper =
-        _projectToFrontal(_vector3(rightShoulder!, rightElbow!), frame);
-    return _avg(
-        _vectorAngle3(torso, leftUpper), _vectorAngle3(torso, rightUpper));
+    return _combineSideMetrics(
+      _metricFromChain(
+        _vectorAngle3(
+          torso,
+          _projectToFrontal(_vector3(leftShoulder!, leftElbow!), frame),
+        ),
+        <PoseLandmark?>[leftShoulder, leftElbow],
+      ),
+      _metricFromChain(
+        _vectorAngle3(
+          torso,
+          _projectToFrontal(_vector3(rightShoulder!, rightElbow!), frame),
+        ),
+        <PoseLandmark?>[rightShoulder, rightElbow],
+      ),
+      disagreementToleranceDeg: 18,
+      singleSidePenalty: 0.8,
+    );
   }
 
-  double? _neckNeutralAngle3D(Pose pose, _BodyFrame frame) {
+  _CombinedMetric? _neckNeutralAngle3D(Pose pose, _BodyFrame frame) {
     final earCenter = _midpoint(
       pose[PoseLandmarkType.leftEar],
       pose[PoseLandmarkType.rightEar],
@@ -430,52 +530,21 @@ class PoseMetricCalculator {
         _projectToSagittal(_vector3(shoulderCenter!, earCenter!), frame);
     final torso =
         _projectToSagittal(_vector3(shoulderCenter, hipCenter!), frame);
-    return _vectorAngle3(neck, torso);
-  }
-
-  /// 优先使用 3D 颈部角度，失败时退回到更稳定的 2D 角度。
-  double? _neckNeutralAngleStable(Pose pose, _BodyFrame frame) {
-    final angle3d = _neckNeutralAngle3D(pose, frame);
-    if (angle3d != null && angle3d.isFinite && !angle3d.isNaN) {
-      return angle3d;
-    }
-
-    final leftEar = pose[PoseLandmarkType.leftEar];
-    final rightEar = pose[PoseLandmarkType.rightEar];
-    final shoulderCenter = _midpoint(
-      pose[PoseLandmarkType.leftShoulder],
-      pose[PoseLandmarkType.rightShoulder],
-    );
-    final hipCenter = _midpoint(
-      pose[PoseLandmarkType.leftHip],
-      pose[PoseLandmarkType.rightHip],
-    );
-    if (!_isReliableRep(leftEar) ||
-        !_isReliableRep(rightEar) ||
-        !_isReliableRep(shoulderCenter) ||
-        !_isReliableRep(hipCenter)) {
+    final angle = _vectorAngle3(neck, torso);
+    if (angle.isNaN || !angle.isFinite) {
       return null;
     }
-
-    final earCenter = PoseLandmark(
-      x: (leftEar!.x + rightEar!.x) / 2,
-      y: (leftEar.y + rightEar.y) / 2,
-      z: (leftEar.z + rightEar.z) / 2,
-      likelihood: min(leftEar.likelihood, rightEar.likelihood),
+    return _CombinedMetric(
+      value: angle,
+      confidence: _chainConfidence(<PoseLandmark?>[
+        pose[PoseLandmarkType.leftEar],
+        pose[PoseLandmarkType.rightEar],
+        pose[PoseLandmarkType.leftShoulder],
+        pose[PoseLandmarkType.rightShoulder],
+        pose[PoseLandmarkType.leftHip],
+        pose[PoseLandmarkType.rightHip],
+      ]),
     );
-    final s = shoulderCenter!;
-    final h = hipCenter!;
-    final v1x = earCenter.x - s.x;
-    final v1y = earCenter.y - s.y;
-    final v2x = h.x - s.x;
-    final v2y = h.y - s.y;
-    final m1 = sqrt(v1x * v1x + v1y * v1y);
-    final m2 = sqrt(v2x * v2x + v2y * v2y);
-    if (m1 < 1e-5 || m2 < 1e-5) {
-      return null;
-    }
-    final cosValue = (v1x * v2x + v1y * v2y) / (m1 * m2);
-    return acos(cosValue.clamp(-1.0, 1.0)) * 180 / pi;
   }
 
   double? _deviationFromStraight(double? angleDeg) {
@@ -566,6 +635,116 @@ class PoseMetricCalculator {
     return atan2(cross.magnitude * sign, dot) * 180 / pi;
   }
 
+  double? _segmentLeanFromUp(_V3 segment, _BodyFrame frame) {
+    final angle = _vectorAngle3(segment, frame.up);
+    if (angle.isNaN || !angle.isFinite) {
+      return null;
+    }
+    return angle;
+  }
+
+  double? _frontalAlignmentAngle(
+    PoseLandmark hip,
+    PoseLandmark knee,
+    PoseLandmark ankle,
+    _BodyFrame frame,
+  ) {
+    final thigh = _projectToFrontal(_vector3(knee, hip), frame);
+    final shank = _projectToFrontal(_vector3(knee, ankle), frame);
+    final angle = _vectorAngle3(thigh, shank);
+    if (angle.isNaN || !angle.isFinite) {
+      return null;
+    }
+    return angle;
+  }
+
+  _SideMetric? _metricFromChain(
+    double? value,
+    List<PoseLandmark?> points,
+  ) {
+    if (value == null || value.isNaN || !value.isFinite) {
+      return null;
+    }
+    final confidence = _chainConfidence(points);
+    if (confidence <= 0) {
+      return null;
+    }
+    return _SideMetric(value: value, confidence: confidence);
+  }
+
+  _CombinedMetric _combineSideMetrics(
+    _SideMetric? left,
+    _SideMetric? right, {
+    required double disagreementToleranceDeg,
+    double singleSidePenalty = 0.85,
+  }) {
+    if (left == null && right == null) {
+      return const _CombinedMetric();
+    }
+    if (left == null) {
+      return _CombinedMetric(
+        value: right!.value,
+        confidence: right.confidence * singleSidePenalty,
+      );
+    }
+    if (right == null) {
+      return _CombinedMetric(
+        value: left.value,
+        confidence: left.confidence * singleSidePenalty,
+      );
+    }
+
+    final disagreement = (left.value - right.value).abs();
+    if (disagreement > disagreementToleranceDeg * 1.6) {
+      final preferred = left.confidence >= right.confidence ? left : right;
+      return _CombinedMetric(
+        value: preferred.value,
+        confidence: preferred.confidence * 0.18,
+        disagreementDeg: disagreement,
+      );
+    }
+
+    if (disagreement > disagreementToleranceDeg) {
+      final preferred = left.confidence >= right.confidence ? left : right;
+      return _CombinedMetric(
+        value: preferred.value,
+        confidence: preferred.confidence * 0.55,
+        disagreementDeg: disagreement,
+      );
+    }
+
+    final weightSum = left.confidence + right.confidence;
+    final value = weightSum <= 1e-6
+        ? (left.value + right.value) / 2.0
+        : (left.value * left.confidence + right.value * right.confidence) /
+            weightSum;
+    final agreementFactor =
+        (1 - disagreement / (disagreementToleranceDeg * 1.6)).clamp(0.45, 1.0);
+    return _CombinedMetric(
+      value: value,
+      confidence:
+          (((left.confidence + right.confidence) / 2.0) * agreementFactor)
+              .clamp(0.0, 1.0),
+      disagreementDeg: disagreement,
+    );
+  }
+
+  double _chainConfidence(List<PoseLandmark?> points) {
+    var minLike = 1.0;
+    var hasPoint = false;
+    for (final point in points) {
+      if (point == null || point.likelihood < minLikelihood) {
+        return 0;
+      }
+      hasPoint = true;
+      minLike = min(minLike, point.likelihood);
+    }
+    if (!hasPoint) {
+      return 0;
+    }
+    return ((minLike - minLikelihood) / (1 - minLikelihood)).clamp(0.0, 1.0);
+  }
+
   bool _isReliable(PoseLandmark? point) {
     return point != null && point.likelihood >= minLikelihood;
   }
@@ -594,6 +773,28 @@ class _PlanePoint {
 
   final double forward;
   final double up;
+}
+
+class _SideMetric {
+  const _SideMetric({
+    required this.value,
+    required this.confidence,
+  });
+
+  final double value;
+  final double confidence;
+}
+
+class _CombinedMetric {
+  const _CombinedMetric({
+    this.value,
+    this.confidence = 0,
+    this.disagreementDeg,
+  });
+
+  final double? value;
+  final double confidence;
+  final double? disagreementDeg;
 }
 
 class _V3 {
