@@ -10,15 +10,15 @@ class PoseAnalyzer {
   static const int _stateHoldFrames = 2;
   static const int _maxMissingFramesToKeepState = 6;
   // 一次完整动作至少要有一个最短时长，过滤“抖一下就计数”的情况。
-  static const int _minRepPhaseMs = 300;
-  static const int _moveNetStateHoldFrames = 2;
-  static const int _blazePoseStateHoldFrames = 1;
+  static const int _minRepPhaseMs = 420;
+  static const int _moveNetStateHoldFrames = 3;
+  static const int _blazePoseStateHoldFrames = 2;
   static const String _cleanRepPraise = '动作不错。继续保持';
 
   static const int _issueOnFrames = 2;
   static const int _issueOffFrames = 2;
-  static const double _emaFast = 0.50;
-  static const double _emaSlow = 0.38;
+  static const double _emaFast = 0.32;
+  static const double _emaSlow = 0.24;
 
   final PoseMetricCalculator _metricCalculator = const PoseMetricCalculator();
 
@@ -166,9 +166,9 @@ class PoseAnalyzer {
       isMoveNet ? 0.90 : 0.92,
     );
 
-    final torsoLeanLimit = t.maxTorsoLeanDeg + (isMoveNet ? 2 : 3);
+    final torsoLeanLimit = t.maxTorsoLeanDeg + (isMoveNet ? 1 : 2);
 
-    final kneeOverToeLimit = t.maxKneeOverToe - (isMoveNet ? 0.02 : 0.0);
+    final kneeOverToeLimit = t.maxKneeOverToe - (isMoveNet ? 0.03 : 0.02);
 
     if (kneeAngle != null) {
       _squatMissingFrames = 0;
@@ -184,21 +184,21 @@ class PoseAnalyzer {
           ? squatStartAngle
           : math.min(
               t.squatUpAngle - 4,
-              _squatTopAngleRef! - (isMoveNet ? 10 : 14),
+              _squatTopAngleRef! - (isMoveNet ? 14 : 18),
             );
       final effectiveSquatStartAngle =
           math.min(squatStartAngle, dynamicSquatStartAngle);
-    final dynamicDepthAngle = _squatTopAngleRef == null
+      final dynamicDepthAngle = _squatTopAngleRef == null
           ? (t.squatDownAngle + t.shallowSquatMargin * depthReachFactor)
           : math.max(
               t.squatDownAngle + t.shallowSquatMargin * depthReachFactor,
-              _squatTopAngleRef! - (isMoveNet ? 42 : 48),
+              _squatTopAngleRef! - (isMoveNet ? 52 : 58),
             );
       final effectiveSquatUpGate = _squatRepMinAngle == null
           ? squatUpGate
           : math.min(
               squatUpGate,
-              _squatRepMinAngle! + (isMoveNet ? 18 : 22),
+              _squatRepMinAngle! + (isMoveNet ? 16 : 20),
             );
 
       // 膝角足够小，说明正在下蹲。
@@ -564,7 +564,7 @@ class PoseAnalyzer {
           ? pushupStartAngle
           : math.min(
               t.pushupUpAngle - 4,
-              _pushupTopAngleRef! - (isMoveNet ? 12 : 16),
+              _pushupTopAngleRef! - (isMoveNet ? 16 : 20),
             );
       final effectivePushupStartAngle =
           math.min(pushupStartAngle, dynamicPushupStartAngle);
@@ -572,13 +572,13 @@ class PoseAnalyzer {
           ? (t.pushupDownAngle + t.pushupDepthMargin * 0.55)
           : math.max(
               t.pushupDownAngle + t.pushupDepthMargin * 0.55,
-              _pushupTopAngleRef! - (isMoveNet ? 48 : 54),
+              _pushupTopAngleRef! - (isMoveNet ? 58 : 64),
             );
       final effectivePushupUpGate = _pushupRepMinAngle == null
           ? pushupUpGate
           : math.min(
               pushupUpGate,
-              _pushupRepMinAngle! + (isMoveNet ? 24 : 28),
+              _pushupRepMinAngle! + (isMoveNet ? 20 : 24),
             );
 
       // 手肘弯曲到足够小，说明已经下放到底部附近。

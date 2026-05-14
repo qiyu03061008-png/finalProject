@@ -52,7 +52,7 @@
               "sourceMetric": "squatKneeInwardRatio"
             },
             "maxKneeOverToe": {
-              "selected": 0.45,
+              "selected": 0.36,
               "p10": 0.05770806727596242,
               "p50": 0.7881649825081203,
               "p90": 1.2316102692445614,
@@ -121,7 +121,7 @@
               "sourceMetric": "squatKneeInwardRatio"
             },
             "maxKneeOverToe": {
-              "selected": 0.423,
+              "selected": 0.34,
               "p10": 0.0001711229844224143,
               "p50": 0.0001711229844224143,
               "p90": 0.0001711229844224143,
@@ -563,7 +563,7 @@
               "sourceMetric": "pushupElbowAngle"
             },
             "pushupDepthMargin": {
-              "selected": 16.0,
+              "selected": 11.0,
               "p10": 42.86590707660574,
               "p50": 137.10949232814335,
               "p90": 156.27953417605246,
@@ -608,7 +608,7 @@
               "sourceMetric": "pushupHipOffset"
             },
             "maxElbowFlareDeg": {
-              "selected": 90.0,
+              "selected": 76.0,
               "p10": 91.40116192902246,
               "p50": 161.28686819769035,
               "p90": 170.59604156757726,
